@@ -1,0 +1,178 @@
+{
+  "timestamp": "2026-01-12T00:00:00.000Z",
+  "project": "PaperReader2",
+  "version": "1.0.0",
+  "scan_summary": {
+    "total_files": 35,
+    "scanned_files": 15,
+    "coverage_percentage": 42.9,
+    "truncated": false,
+    "gaps": [
+      "frontend 目录尚未创建",
+      "core 业务逻辑模块未实现 (Phase 2/3)",
+      "tests 测试文件未编写",
+      "scripts 启动脚本未创建"
+    ]
+  },
+  "modules": [
+    {
+      "name": "backend",
+      "path": "backend/",
+      "type": "python",
+      "status": "development",
+      "phase": 1,
+      "entry_points": [
+        "backend/app/main.py"
+      ],
+      "api_routes": [
+        "backend/app/api/v1/health.py",
+        "backend/app/api/v1/documents.py"
+      ],
+      "core_logic": [
+        "backend/app/core/ (计划中 Phase 2/3)"
+      ],
+      "models": [
+        "backend/app/models/ (框架就绪)"
+      ],
+      "tests": [
+        "backend/tests/ (计划中)"
+      ],
+      "config_files": [
+        "backend/requirements.txt",
+        "backend/.env.example",
+        "backend/.gitignore"
+      ],
+      "data_directories": [
+        "backend/data/uploads/",
+        "backend/data/processed/"
+      ],
+      "coverage": {
+        "entry_points": true,
+        "api_routes": true,
+        "core_logic": false,
+        "models": false,
+        "tests": false
+      }
+    },
+    {
+      "name": "frontend",
+      "path": "frontend/",
+      "type": "typescript-react",
+      "status": "not_started",
+      "phase": 2,
+      "entry_points": [],
+      "components": [],
+      "coverage": {}
+    }
+  ],
+  "key_paths": {
+    "root_readme": "CLAUDE.md",
+    "backend_readme": "backend/CLAUDE.md",
+    "backend_readme_legacy": "backend/README.md",
+    "devplan": "devplan.md",
+    "backend_main": "backend/app/main.py",
+    "backend_config": "backend/app/config.py",
+    "backend_requirements": "backend/requirements.txt",
+    "backend_env_example": "backend/.env.example"
+  },
+  "ignore_rules": {
+    "venv": "backend/venv/**",
+    "python_cache": "__pycache__/**/*.py[cod]",
+    "data_uploads": "backend/data/uploads/**",
+    "data_processed": "backend/data/processed/**",
+    "ide": ".vscode/**,.idea/**",
+    "logs": "*.log,logs/**",
+    "pytest_cache": ".pytest_cache/**"
+  },
+  "technology_stack": {
+    "backend": {
+      "language": "Python",
+      "version": "3.9+",
+      "framework": "FastAPI 0.109.0",
+      "server": "Uvicorn 0.27.0",
+      "pdf_processing": ["Pix2Text >=1.1.0", "PyMuPDF 1.23.8"],
+      "docx_processing": "python-docx 1.1.0",
+      "llm": "dashscope >=1.14.0",
+      "token_counter": "tiktoken >=0.5.0",
+      "data_validation": "Pydantic 2.5.3"
+    },
+    "frontend": {
+      "language": "TypeScript",
+      "framework": "React 18.2.0",
+      "build_tool": "Vite 5.0.12",
+      "state_management": "Zustand 4.5.0",
+      "markdown": "react-markdown 9.0.1",
+      "math": "KaTeX 0.16.9",
+      "styling": "Tailwind CSS 3.4.1"
+    }
+  },
+  "api_endpoints": {
+    "base_url": "http://127.0.0.1:8000",
+    "api_prefix": "/api/v1",
+    "health": [
+      "GET /api/v1/health",
+      "GET /api/v1/health/ping"
+    ],
+    "documents": [
+      "POST /api/v1/documents/upload",
+      "GET /api/v1/documents/list",
+      "GET /api/v1/documents/{doc_id}",
+      "GET /api/v1/documents/{doc_id}/images/{image_name}",
+      "DELETE /api/v1/documents/{doc_id}"
+    ],
+    "chat": []
+  },
+  "environment_variables": {
+    "required": [
+      "DASHSCOPE_API_KEY"
+    ],
+    "optional": [
+      "API_HOST",
+      "API_PORT",
+      "API_PREFIX",
+      "QWEN_API_BASE",
+      "QWEN_MODEL",
+      "UPLOAD_DIR",
+      "PROCESSED_DIR",
+      "USE_MARKER",
+      "CORS_ORIGINS",
+      "LOG_LEVEL",
+      "MAX_FILE_SIZE"
+    ]
+  },
+  "development_phase": {
+    "current": "Phase 1: 环境搭建与基础框架",
+    "completed": [
+      "项目目录结构",
+      "Python 虚拟环境",
+      "FastAPI 应用入口",
+      "配置管理",
+      "健康检查 API",
+      "文件上传 API",
+      "CORS 配置"
+    ],
+    "in_progress": [
+      "单元测试框架"
+    ],
+    "next_phase": "Phase 2: PDF 处理与 Markdown 渲染"
+  },
+  "recommendations": {
+    "priority_tasks": [
+      "实现 PDFProcessor 类 (Pix2Text 集成)",
+      "编写单元测试",
+      "创建前端项目框架",
+      "实现后台异步任务处理"
+    ],
+    "next_scan_directories": [
+      "backend/app/core/ (待实现)",
+      "frontend/ (待创建)",
+      "tests/ (待实现)"
+    ]
+  },
+  "metadata": {
+    "created_at": "2026-01-12T00:00:00.000Z",
+    "last_updated": "2026-01-12T00:00:00.000Z",
+    "scan_version": "1.0.0",
+    "scanner": "Initialization Architect (Adaptive Version)"
+  }
+}

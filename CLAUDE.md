@@ -1,0 +1,635 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Essential Commands
+
+### Backend
+
+```bash
+cd backend
+
+# Create and activate virtual environment (first time)
+python -m venv venv
+.\venv\Scripts\Activate.ps1  # Windows PowerShell
+venv\Scripts\activate.bat    # Windows CMD
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set required environment variable (PowerShell)
+$env:DASHSCOPE_API_KEY="your-api-key-here"
+
+# Start development server
+python -m app.main
+# or with auto-reload:
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Run tests
+pytest                                          # all tests
+pytest tests/test_pdf_processor.py -v          # specific file
+pytest --cov=app --cov-report=html             # coverage report
+
+# Verify device detection (GPU support)
+python -c "from app.core.pdf_processor import detect_device; print(detect_device())"
+```
+
+### Frontend
+
+```bash
+cd frontend
+
+# Install dependencies (first time)
+npm install
+
+# Start development server
+npm run dev
+
+# Type checking
+npx tsc --noEmit
+
+# Build production version
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Service URLs
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:8000
+- Swagger UI: http://localhost:8000/api/docs
+- Health check: http://localhost:8000/api/v1/health
+
+---
+
+## Architecture Overview
+
+### System Architecture
+
+```
+Frontend (React + Vite)
+    ↓ HTTP/JSON
+API Gateway (FastAPI)
+    ↓
+Business Logic (Core Services)
+    ↓
+File System Storage
+```
+
+### Document Processing Pipeline (Key Multi-File Pattern)
+
+**The complete flow requires understanding interactions across multiple files:**
+
+1. **Upload** (`app/api/v1/documents.py`):
+   - User uploads PDF → `POST /api/v1/documents/upload`
+   - File validated, UUID generated as `doc_id`
+   - Saved to `data/uploads/{doc_id}/original.pdf`
+   - Background task added to `BackgroundTasks`
+
+2. **Background Processing** (`app/core/document_processor.py`):
+   - `process_document_background()` runs asynchronously
+   - Calls `PDFProcessor.process()` from `app/core/pdf_processor.py`
+
+3. **PDF Processing** (`app/core/pdf_processor.py`):
+   - **Lazy Loading**: Pix2Text model loaded via `@property` on first access
+   - **OCR Recognition**: `Pix2Text.recognize_pdf()` → Markdown text with LaTeX formulas
+   - **Image Extraction**: PyMuPDF extracts images → saved to `data/processed/images/{doc_id}/`
+   - **Markdown Generation**: Combines OCR text + image references → final Markdown
+
+4. **State Tracking** (File System as State Store):
+   - Success: `data/processed/markdown/{doc_id}.md` created
+   - Failure: `data/processed/markdown/{doc_id}.error` created with JSON error details
+
+5. **Frontend Polling** (`frontend/src/store/documentStore.ts`):
+   - Frontend polls `GET /api/v1/documents/{doc_id}` to check processing status
+   - Status determined by file existence (`.md` = ready, `.error` = failed)
+
+**Critical Insight**: The system uses **file system as state database**. No database layer - document status is inferred from which files exist.
+
+### GPU Device Detection Strategy
+
+**Multi-layer fallback pattern** in `app/core/pdf_processor.py`:
+
+```python
+detect_device():
+    1. Check PAPERREADER_DEVICE env var (manual override)
+    2. Check torch.cuda.is_available()
+    3. Fallback to 'cpu'
+```
+
+**Environment variable control**:
+- `PAPERREADER_DEVICE=cuda` - force GPU
+- `PAPERREADER_DEVICE=cpu` - force CPU
+- Unset - auto-detect
+
+**Graceful degradation** in `PDFProcessor.p2t` property:
+- If GPU initialization fails, automatically retries with CPU
+- Logs warning and updates `self.device` to 'cpu'
+
+---
+
+## Key Design Patterns
+
+### 1. Lazy Loading Pattern (Pix2Text Model)
+
+**Location**: `app/core/pdf_processor.py`
+
+```python
+class PDFProcessor:
+    def __init__(self):
+        self._p2t = None  # Not loaded yet
+
+    @property
+    def p2t(self):
+        if self._p2t is None:
+            from pix2text import Pix2Text
+            self._p2t = Pix2Text.from_config(device=self.device)
+        return self._p2t
+```
+
+**Why**: Pix2Text model download takes 1-2 minutes on first run. Lazy loading avoids blocking application startup.
+
+### 2. Error Isolation Pattern
+
+**Location**: `app/core/document_processor.py`
+
+Failed document processing creates `.error` files instead of crashing:
+
+```python
+# data/processed/markdown/{doc_id}.error
+{
+  "error": "Error message",
+  "error_type": "ProcessingError",
+  "timestamp": "2026-01-12T18:30:00",
+  "traceback": "Full stack trace..."
+}
+```
+
+**Why**: Each document failure is isolated. Other documents continue processing. Frontend can display specific error messages.
+
+### 3. Dual Store Pattern (Zustand)
+
+**Location**: `frontend/src/store/`
+
+**DocumentStore** - Business state:
+```typescript
+{
+  documents: Document[],
+  currentDocument: Document | null,
+  isLoading: boolean,
+  error: string | null,
+  fetchDocuments(), uploadDocument(), deleteDocument()
+}
+```
+
+**UIStore** - UI state:
+```typescript
+{
+  isSidebarOpen: boolean,
+  notification: Notification | null,
+  toggleSidebar(), showNotification(), hideNotification()
+}
+```
+
+**Why**: Separation of concerns. Business logic state independent of UI state. Stores can evolve independently.
+
+### 4. Optimistic Update Pattern
+
+**Location**: `frontend/src/store/documentStore.ts`
+
+```typescript
+uploadDocument: async (file) => {
+  const tempId = 'temp-' + Date.now()
+  // Immediately add to local state
+  set({ documents: [...documents, { doc_id: tempId, status: 'uploading' }] })
+
+  const result = await api.upload(file)
+  // Update with real doc_id from server
+  set({ documents: updatedWithRealId })
+}
+```
+
+**Why**: Instant UI feedback. No waiting for server response before showing document in list.
+
+### 5. Type Import Pattern
+
+**Location**: Throughout frontend
+
+```typescript
+import type { Document } from '../types'  // ✅ Correct
+import { Document } from '../types'        // ❌ Wrong with verbatimModuleSyntax
+```
+
+**Why**: TypeScript `verbatimModuleSyntax` requires `type` keyword for type-only imports.
+
+### 6. DocumentStatus Enum (Critical for Frontend-Backend Sync)
+
+**Location**: `frontend/src/types/document.ts`
+
+The frontend and backend MUST use matching status values:
+
+```typescript
+export const DocumentStatus = {
+  UPLOADING: 'uploading',    // Frontend-local state
+  PROCESSING: 'processing',  // Backend: document being processed
+  READY: 'ready',           // Backend: processing complete ✅ NOT 'completed'
+  ERROR: 'error',           // Backend: processing failed ✅ NOT 'failed'
+}
+```
+
+**Critical**: Backend returns `'ready'` and `'error'` - frontend must match exactly. Using `'completed'` or `'failed'` will break status display.
+
+### 7. DocumentContent Type Matching
+
+**Location**: `frontend/src/types/document.ts`
+
+Backend API returns:
+```json
+{
+  "doc_id": "uuid",
+  "content": "Markdown text...",  // ✅ NOT 'markdown'
+  "images": ["img_001", "img_002"],
+  "status": "ready"
+}
+```
+
+**TypeScript interface**:
+```typescript
+export interface DocumentContent {
+  doc_id: string;
+  content: string;      // ✅ Must be 'content', not 'markdown'
+  images: string[];
+  status: DocumentStatus;
+  // ❌ NO 'filename', 'created_at' fields
+}
+```
+
+### 8. Document Type Time Field
+
+**Location**: `frontend/src/types/document.ts`
+
+```typescript
+export interface Document {
+  doc_id: string;
+  filename: string;
+  status: DocumentStatus;
+  upload_time: number;    // ✅ Unix timestamp (float), NOT string
+  file_size: number;
+  // ❌ NO 'file_type', 'updated_at' fields
+}
+```
+
+**Usage**: Convert to display date with `new Date(doc.upload_time * 1000).toLocaleString()`
+
+### 9. Polling with Exponential Backoff
+
+**Location**: `frontend/src/hooks/useDocumentPolling.ts`
+
+Document status polling uses exponential backoff to reduce server load:
+
+```typescript
+const calculateInterval = (count: number): number => {
+  if (count < 10) return 3000;      // First 10: every 3s
+  if (count < 30) return 5000;      // 10-30: every 5s
+  return 10000;                     // After 30: every 10s
+};
+```
+
+**Why**: Reduces unnecessary API calls while providing responsive status updates. Auto-stops when status reaches terminal state (`ready` or `error`).
+
+### 10. DocumentViewer with Scroll Progress
+
+**Location**: `frontend/src/components/DocumentViewer.tsx`
+
+The document viewer displays scroll progress in real-time:
+
+```typescript
+useEffect(() => {
+  const handleScroll = () => {
+    const scrollTop = window.scrollY;
+    const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    const progress = (scrollTop / docHeight) * 100;
+    setScrollProgress(Math.min(100, Math.max(0, progress)));
+  };
+  window.addEventListener('scroll', handleScroll);
+  return () => window.removeEventListener('scroll', handleScroll);
+}, []);
+```
+
+**Why**: Provides user feedback on reading progress. Clean up event listener on unmount prevents memory leaks.
+
+---
+
+## Critical Implementation Details
+
+### PDF Processing Switch
+
+**Location**: `app/core/pdf_processor.py`
+
+Two PDF processing engines supported via `USE_MARKER` environment variable:
+
+- **Pix2Text** (default): Fast (3-5 sec/page), formula recognition, production-ready
+- **marker-pdf**: Higher quality for complex layouts, optional upgrade
+
+Currently only Pix2Text is implemented. marker-pdf support is commented out in `requirements.txt`.
+
+### Token Management Strategy
+
+**Location**: `app/core/context_builder.py` (Phase 3 - planned)
+
+Qwen supports 128k context. Strategy:
+- MAX_TOKENS = 120,000 (8k buffer for prompt + response)
+- Smart truncation prioritizes: Abstract → Introduction → Conclusion → Methods → References
+- Uses tiktoken for accurate token counting
+
+### Configuration Management
+
+**Location**: `app/config.py`
+
+```python
+class Settings(BaseSettings):
+    dashscope_api_key: str  # Required from env
+    api_host: str = "127.0.0.1"
+    upload_dir: Path = Path("./data/uploads")
+
+    # GPU控制
+    paperreader_device: str = "auto"  # auto/cuda/cpu
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore"
+    )
+```
+
+**Key points**:
+- Type-safe configuration via Pydantic
+- Reads from environment variables and `.env` file
+- Extra variables in `.env` are ignored (`extra="ignore"`)
+
+### API Route Pattern
+
+**Location**: `app/api/v1/`, `app/main.py`
+
+All routes follow RESTful conventions:
+
+```python
+# app/api/v1/documents.py
+router = APIRouter(prefix="/documents", tags=["documents"])
+
+@router.post("/upload")
+async def upload_document(file: UploadFile = File(...)):
+    # Implementation
+
+# Registered in app/main.py
+app.include_router(
+    documents.router,
+    prefix=settings.api_prefix,  # /api/v1
+    tags=["documents"]
+)
+```
+
+**File paths**:
+- Routes: `app/api/v1/{feature}.py`
+- Models: `app/models/{feature}.py` (Pydantic schemas)
+- Business logic: `app/core/{feature}_processor.py`
+
+### Frontend Dependencies
+
+**Location**: `frontend/package.json`
+
+Key Phase 2 dependencies:
+- `react-markdown`: Markdown rendering
+- `remark-math` + `rehype-katex`: LaTeX formula support
+- `remark-gfm`: GitHub Flavored Markdown (tables, strikethrough)
+- `react-router-dom`: Client-side routing (v7)
+- `zustand`: State management
+- `axios`: HTTP client
+- `katex`: Math formula rendering
+
+**Installation**:
+```bash
+cd frontend
+npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom zustand axios katex
+```
+
+---
+
+## Important File Locations
+
+### Backend Key Files
+
+| File | Purpose |
+|------|---------|
+| `app/main.py` | FastAPI app entry point, CORS, route registration |
+| `app/config.py` | Pydantic Settings configuration |
+| `app/api/v1/documents.py` | Document upload/list/delete endpoints |
+| `app/core/pdf_processor.py` | PDF → Markdown conversion, GPU detection |
+| `app/core/document_processor.py` | Background task coordination |
+| `data/uploads/{doc_id}/original.pdf` | Original uploaded files |
+| `data/processed/markdown/{doc_id}.md` | Processed Markdown output |
+| `data/processed/images/{doc_id}/` | Extracted images |
+
+### Frontend Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/App.tsx` | Router setup with RouterProvider |
+| `src/router/index.tsx` | Route configuration (react-router-dom v7) |
+| `src/services/client.ts` | Axios instance configuration |
+| `src/services/document.ts` | Document API service class |
+| `src/store/documentStore.ts` | Document state management (includes fetchDocumentContent) |
+| `src/store/uiStore.ts` | UI state (sidebar, notifications) |
+| `src/hooks/useDocumentPolling.ts` | Document status polling with exponential backoff |
+| `src/components/FileUpload.tsx` | Upload with drag-and-drop |
+| `src/components/DocumentList.tsx` | Document list with status badges |
+| `src/components/MarkdownRenderer.tsx` | Markdown + LaTeX rendering (react-markdown + KaTeX) |
+| `src/components/LazyImage.tsx` | Image lazy loading with Intersection Observer |
+| `src/components/DocumentViewer.tsx` | Document viewer with scroll progress |
+| `src/pages/HomePage.tsx` | Home page |
+| `src/pages/DocumentViewPage.tsx` | Document view page |
+
+---
+
+## Development Workflow
+
+### Adding Backend Features
+
+1. **Create route** in `app/api/v1/{feature}.py`:
+   ```python
+   router = APIRouter(prefix="/feature", tags=["feature"])
+
+   @router.post("/")
+   async def create_feature(request: RequestSchema):
+       # Call business logic
+       pass
+   ```
+
+2. **Define models** in `app/models/{feature}.py`:
+   ```python
+   class RequestSchema(BaseModel):
+       field: str
+   ```
+
+3. **Implement business logic** in `app/core/{feature}_processor.py`:
+   ```python
+   class FeatureProcessor:
+       def process(self, input) -> output:
+           pass
+   ```
+
+4. **Register route** in `app/main.py`:
+   ```python
+   app.include_router(feature.router, prefix=settings.api_prefix)
+   ```
+
+5. **Add tests** in `tests/test_{feature}.py`
+
+### Adding Frontend Features
+
+1. **Create component** in `src/components/{Feature}.tsx`:
+   ```typescript
+   import type { FeatureData } from '../types'
+
+   export const Feature: React.FC<{ data: FeatureData }> = ({ data }) => {
+     return <div>{data.field}</div>
+   }
+   ```
+
+2. **Add API service** in `src/services/{feature}.ts`:
+   ```typescript
+   export class FeatureService {
+     async getFeature(): Promise<FeatureData> {
+       return apiClient.get('/feature')
+     }
+   }
+   ```
+
+3. **Update store** in `src/store/{feature}Store.ts` (if needed):
+   ```typescript
+   export const useFeatureStore = create<FeatureState>((set) => ({
+     data: null,
+     fetchData: async () => { /* ... */ }
+   }))
+   ```
+
+4. **Add types** in `src/types/{feature}.ts`
+
+5. **Add route** in `src/router/index.tsx` (if creating new page):
+   ```typescript
+   import { NewFeaturePage } from '../pages/NewFeaturePage';
+
+   // In router config:
+   {
+     path: 'feature/:id',
+     element: <NewFeaturePage />,
+   }
+   ```
+
+6. **Create page component** in `src/pages/{Feature}Page.tsx`:
+   ```typescript
+   export const FeaturePage: React.FC = () => {
+     const { id } = useParams<{ id: string }>();
+     const navigate = useNavigate();
+     // Component logic
+   };
+   ```
+
+### Debugging Tips
+
+**Backend**:
+- Use Swagger UI at http://localhost:8000/api/docs for API testing
+- Check `data/processed/markdown/{doc_id}.error` for processing failures
+- Enable logging: `logger.info()`, `logger.error()` throughout code
+- Test device detection: `python -c "from app.core.pdf_processor import detect_device; print(detect_device())"`
+
+**Frontend**:
+- Browser DevTools → Network tab: View API requests/responses
+- React DevTools: Inspect component tree and state
+- Console: Check for `console.log()` output and errors
+- Type checking: `npx tsc --noEmit` to find type errors
+- **Route debugging**: Check `src/router/index.tsx` for route configuration
+- **Polling debugging**: Check `useDocumentPolling` hook logs and interval timing
+- **State debugging**: Use Zustand DevTools middleware (if configured)
+
+---
+
+## Common Gotchas
+
+### Pix2Text First Load
+- **Issue**: First Pix2Text call takes 1-2 minutes (model download)
+- **Solution**: Lazy loading via `@property` mitigates this. Only impacts first document processed after server start.
+
+### Environment Variable Precedence
+- **Issue**: `DASHSCOPE_API_KEY` must be set before importing `app.config`
+- **Solution**: Set in system environment or `.env` file before starting server
+- **Verify**: `python -c "from app.config import settings; print(settings.dashscope_api_key[:10])"`
+
+### Windows Path Handling
+- **Issue**: Backslash path separators cause issues
+- **Solution**: Use forward slashes `/` or double backslashes `\\` in paths
+- **Virtual env activation**: PowerShell uses `.\venv\Scripts\Activate.ps1`
+
+### CORS Configuration
+- **Issue**: Frontend at `localhost:5173` cannot reach backend at `localhost:8000`
+- **Solution**: Ensure `http://localhost:5173` is in `settings.cors_origins` in `app/config.py`
+
+### TypeScript Type Imports
+- **Issue**: Import errors with `verbatimModuleSyntax` enabled
+- **Solution**: Use `import type { ... }` for type-only imports
+
+### File System State Race Conditions
+- **Issue**: Frontend polls for status before file is created
+- **Solution**: Frontend implements retry logic. Status endpoint returns appropriate HTTP codes.
+
+### CSS @import Order
+- **Issue**: PostCSS error: "@import must precede all other statements"
+- **Solution**: `@import` statements must come FIRST in CSS files, before `@tailwind` directives
+- **Example**:
+  ```css
+  /* ✅ Correct */
+  @import 'katex/dist/katex.min.css';
+  @tailwind base;
+  @tailwind components;
+  @tailwind utilities;
+
+  /* ❌ Wrong */
+  @tailwind base;
+  @import 'katex/dist/katex.min.css';
+  ```
+
+### JSX Comment Placement
+- **Issue**: TypeScript error with comments inside JSX expressions
+- **Solution**: Comments must be OUTSIDE the expression or use separate `{/* */}` blocks
+- **Example**:
+  ```tsx
+  {/* ✅ Correct - Comment outside */}
+  {doc.status === 'ready' && (
+    <button>View</button>
+  )}
+
+  {/* ❌ Wrong - Comment inside opening */}
+  {doc.status === 'ready' && (  {/* comment */}
+    <button>View</button>
+  )}
+  ```
+
+### setInterval Return Type in Browser
+- **Issue**: `NodeJS.Timeout` type error in browser environment
+- **Solution**: Use `ReturnType<typeof setInterval>` or `number | undefined` for ref
+- **Example**:
+  ```typescript
+  const intervalRef = useRef<number | undefined>(undefined);
+  intervalRef.current = setInterval(callback, 1000);
+  ```
+
+---
+
+## Related Documentation
+
+- **README.md**: Project overview, features, installation guide (user-facing)
+- **devplan.md**: Complete development roadmap and phase planning
+- **devplan_phase2_frontend.md**: Phase 2 frontend implementation details (Markdown rendering, routing, polling)
+- **backend/CLAUDE.md**: Backend-specific deep-dive
+- **API Docs**: http://localhost:8000/api/docs (Swagger UI when backend running)

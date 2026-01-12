@@ -1,0 +1,130 @@
+/* KaTeX样式 - 必须在所有其他语句之前 */
+@import 'katex/dist/katex.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义基础样式 */
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+
+  * {
+    @apply box-border;
+  }
+}
+
+/* 自定义组件样式 */
+@layer components {
+  /* 按钮样式 */
+  .btn-primary {
+    @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors duration-200 font-medium;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors duration-200 font-medium;
+  }
+
+  /* 卡片样式 */
+  .card {
+    @apply bg-white rounded-lg shadow-md p-6;
+  }
+
+  /* 输入框样式 */
+  .input {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  /* 文件上传区域样式 */
+  .upload-zone {
+    @apply border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-500 transition-colors duration-200 cursor-pointer;
+  }
+
+  .upload-zone.dragging {
+    @apply border-primary-500 bg-primary-50;
+  }
+}
+
+/* Markdown自定义样式 */
+.prose {
+  @apply text-gray-800 leading-relaxed;
+}
+
+.prose h1 {
+  @apply text-3xl font-bold text-gray-900 mt-8 mb-4;
+}
+
+.prose h2 {
+  @apply text-2xl font-semibold text-gray-900 mt-6 mb-3;
+}
+
+.prose h3 {
+  @apply text-xl font-semibold text-gray-900 mt-4 mb-2;
+}
+
+.prose p {
+  @apply my-4;
+}
+
+.prose ul,
+.prose ol {
+  @apply my-4 ml-6;
+}
+
+.prose ul {
+  @apply list-disc;
+}
+
+.prose ol {
+  @apply list-decimal;
+}
+
+.prose li {
+  @apply my-2;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic my-4 text-gray-700;
+}
+
+.prose a {
+  @apply text-blue-600 hover:text-blue-800 underline;
+}
+
+.prose table {
+  @apply w-full my-4 border-collapse;
+}
+
+.prose table th,
+.prose table td {
+  @apply border border-gray-300 px-4 py-2;
+}
+
+.prose table th {
+  @apply bg-gray-100 font-semibold;
+}
+
+.prose img {
+  @apply max-w-full h-auto;
+}
+
+/* 数学公式样式 */
+.katex-display {
+  @apply my-6 overflow-x-auto;
+}
+
+.katex {
+  @apply text-base;
+}
+
+/* 代码块样式 */
+.prose code {
+  @apply font-mono;
+}
+
+.prose pre code {
+  @apply text-gray-100;
+}
