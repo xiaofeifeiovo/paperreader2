@@ -57,6 +57,8 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   const handleError = () => {
     setIsError(true);
     setIsLoaded(false);
+    // ✅ 改进：在控制台记录失败的URL，便于调试
+    console.error(`LazyImage: 加载失败 - ${alt}`, src);
   };
 
   return (

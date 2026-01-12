@@ -70,10 +70,26 @@ class PDFProcessor:
         - 延迟加载 Pix2Text，避免启动时加载模型（启动时间过长）
         - 使用 @property 惰性初始化
         - 支持自动设备检测
+        - 优先使用 CPU，避免 GPU 配置问题
         """
         self._p2t = None
         # 如果未指定设备，则自动检测
-        self.device = device if device is not None else detect_device()
+        if device is None:
+            self.device = detect_device()
+        else:
+            self.device = device
+
+        # ✅ 新增：如果检测到 CUDA 但不可用，强制使用 CPU
+        if self.device == 'cuda':
+            try:
+                import torch
+                if not torch.cuda.is_available():
+                    logger.warning("⚠️  检测到 device='cuda' 但 CUDA 不可用，强制使用 CPU")
+                    self.device = 'cpu'
+            except ImportError:
+                logger.warning("⚠️  PyTorch 未安装，无法检测 CUDA，强制使用 CPU")
+                self.device = 'cpu'
+
         logger.info(f"📦 PDFProcessor 初始化，设备: {self.device}")
 
     @property
@@ -89,17 +105,26 @@ class PDFProcessor:
                     enable_table=True,    # 启用表格识别
                     device=self.device     # 使用检测到的设备
                 )
-                logger.info("✅ Pix2Text 模型初始化完成")
-            except Exception as e:
-                logger.error(f"❌ Pix2Text 初始化失败 (device={self.device}): {e}")
-                # 如果 GPU 初始化失败，尝试降级到 CPU
-                if self.device == 'cuda':
-                    logger.warning("🔄 GPU 初始化失败，尝试降级到 CPU...")
+                logger.info(f"✅ Pix2Text 模型初始化完成 (device={self.device})")
+
+            except ValueError as e:
+                # ✅ 改进：捕获 CUDA 错误并降级到 CPU
+                if 'CUDAExecutionProvider' in str(e) and self.device == 'cuda':
+                    logger.warning(f"🔄 GPU 初始化失败（{e}），降级到 CPU...")
                     self.device = 'cpu'
-                    self._p2t = Pix2Text.from_config(device='cpu')
+                    self._p2t = Pix2Text.from_config(
+                        enable_formula=True,
+                        enable_table=True,
+                        device='cpu'
+                    )
                     logger.info("✅ Pix2Text 模型初始化完成（CPU 模式）")
                 else:
+                    logger.error(f"❌ Pix2Text 初始化失败: {e}")
                     raise
+
+            except Exception as e:
+                logger.error(f"❌ Pix2Text 初始化失败: {e}", exc_info=True)
+                raise ProcessingError(f"Pix2Text 模型初始化失败: {str(e)}")
 
         return self._p2t
 
@@ -130,20 +155,39 @@ class PDFProcessor:
         2. 图像提取 → 图像文件列表
         3. 插入引用 → 最终 Markdown
         """
-        logger.info(f"开始处理 PDF: {pdf_path}, doc_id: {doc_id}")
+        import time
+        from pathlib import Path
+
+        process_start = time.time()
+        pdf_name = Path(pdf_path).name
+        pdf_size_mb = Path(pdf_path).stat().st_size / 1024 / 1024
+
+        logger.info(f"🚀 [PDF] 开始处理PDF: doc_id={doc_id}, file='{pdf_name}'")
+        logger.debug(f"📄 [PDF] 文件信息: size={pdf_size_mb:.2f} MB")
 
         # 1. OCR 识别
+        ocr_start = time.time()
         markdown = self._ocr_with_pix2text(pdf_path)
-        logger.info(f"OCR 识别完成，文本长度: {len(markdown)}")
+        ocr_time = time.time() - ocr_start
+        logger.info(f"✅ [PDF] OCR识别完成: time={ocr_time:.2f}s, chars={len(markdown)}")
 
         # 2. 提取图像
+        extract_start = time.time()
         image_filenames = self._extract_images(pdf_path, doc_id, output_base_dir)
-        logger.info(f"图像提取完成，共 {len(image_filenames)} 张")
+        extract_time = time.time() - extract_start
+        logger.info(f"✅ [PDF] 图像提取完成: count={len(image_filenames)}, time={extract_time:.2f}s")
 
         # 3. 插入图像引用
         final_markdown = self._insert_image_references(markdown, image_filenames, doc_id)
 
-        logger.info(f"PDF 处理完成: {doc_id}")
+        total_time = time.time() - process_start
+        logger.info(
+            f"🎉 [PDF] PDF处理完成: doc_id={doc_id}, "
+            f"total_time={total_time:.2f}s, "
+            f"markdown_size={len(final_markdown)}, "
+            f"images={len(image_filenames)}"
+        )
+
         return final_markdown, image_filenames
 
     def _ocr_with_pix2text(self, pdf_path: str) -> str:
@@ -164,18 +208,58 @@ class PDFProcessor:
         Raises:
             ProcessingError: OCR 失败时抛出
         """
+        import time
+        from pathlib import Path
+
         try:
-            logger.info(f"Pix2Text 识别: {pdf_path}")
+            ocr_start = time.time()
+            pdf_name = Path(pdf_path).name
+            logger.info(f"🔍 [PDF] Pix2Text识别开始: pdf='{pdf_name}'")
+
+            # 调用 recognize_pdf 获取 Document 对象
             result = self.p2t.recognize_pdf(
                 pdf_path,
-                return_text=False  # 返回 Document 对象
+                return_text=False  # 返回 Document 对象（包含更多元数据）
             )
-            # 从 Document 对象获取 markdown 文本
-            markdown_content = result.__str__()
+
+            ocr_time = time.time() - ocr_start
+            page_count = len(result.pages)
+            avg_time_per_page = ocr_time / page_count if page_count > 0 else 0
+
+            logger.info(
+                f"📝 [PDF] 页面识别完成: "
+                f"page_count={page_count}, "
+                f"time={ocr_time:.2f}s, "
+                f"avg={avg_time_per_page:.2f}s/页"
+            )
+            logger.debug(f"📊 [PDF] 文档统计: total_pages={page_count}, has_text=True")
+
+            # ✅ 修复：使用 to_markdown() 方法获取真正的 Markdown 文本
+            # 创建临时目录用于 to_markdown() 方法提取嵌入图片
+            import tempfile
+            markdown_gen_start = time.time()
+            with tempfile.TemporaryDirectory() as temp_dir:
+                markdown_content = result.to_markdown(
+                    out_dir=temp_dir,
+                    root_url=None,  # 不使用 Pix2Text 的图片引用，我们手动处理
+                    markdown_fn=None  # 不保存到文件，直接返回字符串
+                )
+
+            markdown_gen_time = time.time() - markdown_gen_start
+            line_count = len(markdown_content.splitlines())
+
+            logger.info(
+                f"✍️ [PDF] Markdown生成完成: "
+                f"length={len(markdown_content)}, "
+                f"lines={line_count}, "
+                f"time={markdown_gen_time:.2f}s"
+            )
+            logger.debug(f"🔍 [PDF] Markdown预览: {markdown_content[:200]}...")
+
             return markdown_content
 
         except Exception as e:
-            logger.error(f"Pix2Text 识别失败: {e}", exc_info=True)
+            logger.error(f"❌ [PDF] Pix2Text识别失败: {e}", exc_info=True)
             raise ProcessingError(f"OCR 识别失败: {str(e)}")
 
     def _extract_images(
@@ -200,54 +284,141 @@ class PDFProcessor:
         - 命名: 固定格式 img_001.png, img_002.png
         - 保存: PNG 格式（通用性好）
         - 质量: 保持原始质量，不压缩
+        - 回退: 如果没有提取到图像，记录警告但不报错
 
         Raises:
             ProcessingError: 图像提取失败时抛出
         """
+        import time
+        from pathlib import Path
+
         image_dir = Path(output_base_dir) / "images" / doc_id
         image_dir.mkdir(parents=True, exist_ok=True)
 
         try:
+            extract_start = time.time()
             doc = fitz.open(pdf_path)
+            pdf_name = Path(pdf_path).name
+
+            logger.info(f"📖 [PDF] 打开PDF文件: pages={len(doc)}, path='{pdf_name}'")
+
             image_filenames = []
             seen_xrefs = set()  # 去重
             img_index = 1
+            total_image_bytes = 0
+
+            logger.info(f"🔍 [PDF] 开始扫描图像: total_pages={len(doc)}")
 
             for page_num in range(len(doc)):
                 page = doc[page_num]
                 image_list = page.get_images()
 
-                for img in image_list:
+                # 页面级日志(DEBUG)
+                logger.debug(f"📄 [PDF] 页面 {page_num + 1}/{len(doc)}: 发现 {len(image_list)} 个图像对象")
+
+                for img_in_page_idx, img in enumerate(image_list):
                     xref = img[0]  # 图像交叉引用号
 
                     # 跳过重复图像
                     if xref in seen_xrefs:
+                        logger.debug(f"⏭️ [PDF] 跳过重复图像: xref={xref}")
                         continue
                     seen_xrefs.add(xref)
 
                     # 提取图像
-                    base_image = doc.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    image_ext = base_image["ext"]
+                    try:
+                        base_image = doc.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        image_ext = base_image["ext"]
 
-                    # 生成文件名（固定格式）
-                    img_filename = f"img_{img_index:03d}"
-                    img_path = image_dir / f"{img_filename}.png"
+                        # 使用PIL获取图像元数据
+                        try:
+                            import io
+                            from PIL import Image
+                            img_pil = Image.open(io.BytesIO(image_bytes))
+                            width, height = img_pil.size
+                            format_name = img_pil.format
+                            mode = img_pil.mode
+                        except Exception as pil_error:
+                            # PIL解析失败，使用基本信息
+                            logger.debug(f"⚠️ [PDF] PIL解析失败，使用基本信息: {pil_error}")
+                            width, height = base_image.get("width", 0), base_image.get("height", 0)
+                            format_name = image_ext.upper()
+                            mode = "unknown"
 
-                    # 保存图像
-                    with open(img_path, "wb") as f:
-                        f.write(image_bytes)
+                        # 生成文件名（固定格式）
+                        img_filename = f"img_{img_index:03d}"
+                        img_path = image_dir / f"{img_filename}.png"
 
-                    image_filenames.append(img_filename)
-                    img_index += 1
+                        # 保存图像
+                        with open(img_path, "wb") as f:
+                            f.write(image_bytes)
+
+                        total_image_bytes += len(image_bytes)
+
+                        # 图像提取成功日志(INFO)
+                        logger.info(
+                            f"🖼️ [PDF] 图像提取成功: "
+                            f"img_{img_index:03d}, "
+                            f"xref={xref}, "
+                            f"size={width}x{height}, "
+                            f"format={format_name}, "
+                            f"mode={mode}, "
+                            f"bytes={len(image_bytes)}, "
+                            f"page={page_num + 1}"
+                        )
+
+                        # DEBUG级别:更多技术细节
+                        logger.debug(
+                            f"🔍 [PDF] 图像技术细节: "
+                            f"img_{img_index:03d}, "
+                            f"ext={image_ext}, "
+                            f"filename={img_filename}.png"
+                        )
+
+                        image_filenames.append(img_filename)
+                        img_index += 1
+
+                    except Exception as e:
+                        logger.warning(
+                            f"⚠️ [PDF] 图像提取失败: "
+                            f"xref={xref}, "
+                            f"page={page_num + 1}, "
+                            f"error={str(e)}"
+                        )
+                        continue
+
+            # 保存文档信息（必须在关闭前）
+            page_count = len(doc)
 
             doc.close()
-            logger.info(f"成功提取 {len(image_filenames)} 张图像")
+            extract_time = time.time() - extract_start
+
+            # 提取总结
+            if not image_filenames:
+                logger.warning(
+                    f"⚠️ [PDF] 未提取到图像: "
+                    f"doc_id={doc_id}, "
+                    f"time={extract_time:.2f}s"
+                )
+            else:
+                # 使用保存的页数
+                avg_time_per_page = extract_time / page_count if page_count > 0 else 0
+                logger.info(
+                    f"✅ [PDF] 图像提取完成: "
+                    f"count={len(image_filenames)}, "
+                    f"time={extract_time:.2f}s, "
+                    f"avg={avg_time_per_page:.2f}s/页, "
+                    f"total_bytes={total_image_bytes}"
+                )
+
             return image_filenames
 
         except Exception as e:
-            logger.error(f"图像提取失败: {e}", exc_info=True)
-            raise ProcessingError(f"图像提取失败: {str(e)}")
+            logger.error(f"❌ [PDF] 图像提取失败: {e}", exc_info=True)
+            # ✅ 改进：图像提取失败不阻断整个处理流程
+            logger.warning("⚠️ [PDF] 继续处理流程，不包含图像")
+            return []
 
     def _insert_image_references(
         self,

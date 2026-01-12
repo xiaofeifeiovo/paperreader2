@@ -3,7 +3,7 @@
 使用 Pydantic Settings 管理环境变量和配置
 """
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     )
 
     # 日志配置
-    log_level: str = Field(default="INFO", description="日志级别")
+    log_level: str = Field(default="INFO", description="日志级别 (DEBUG/INFO/WARNING/ERROR)")
+    log_file: Optional[Path] = Field(default=None, description="日志文件路径 (None=仅终端)")
+    log_use_color: bool = Field(default=True, description="是否使用彩色输出")
 
     # 文件上传限制
     max_file_size: int = Field(default=10 * 1024 * 1024, description="最大文件大小(10MB)")

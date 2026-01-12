@@ -52,50 +52,121 @@ async def process_document_background(
     - 文件系统作为状态存储（避免数据库）
     """
     from app.core.pdf_processor import PDFProcessor, ProcessingError
+    import time
 
     md_dir = Path(output_base_dir) / "markdown"
     md_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"开始后台处理: doc_id={doc_id}, file_type={file_type}")
+    start_time = time.time()
+    logger.info(f"🚀 [BG] 开始后台处理: doc_id={doc_id}, file_type={file_type}")
+
+    # 系统资源监控
+    try:
+        import psutil
+        process = psutil.Process()
+        logger.info(
+            f"💻 [BG] 系统资源: "
+            f"cpu={process.cpu_percent()}%, "
+            f"memory={process.memory_info().rss / 1024 / 1024:.1f}MB, "
+            f"threads={process.num_threads()}"
+        )
+    except ImportError:
+        logger.debug("💻 [BG] psutil未安装，跳过资源监控")
 
     try:
-        # 1. 选择处理器（根据文件类型）
+        # 步骤1：选择处理器
+        logger.info(f"📄 [BG] 步骤1: 选择处理器 (file_type={file_type})")
         if file_type.lower() == "pdf":
             processor = PDFProcessor()
         else:
             raise ValueError(f"不支持的文件类型: {file_type}")
 
-        # 2. 处理文档
+        # 处理器信息
+        logger.debug(
+            f"🔧 [BG] 处理器实例: {processor.__class__.__name__}, "
+            f"device={getattr(processor, 'device', 'N/A')}"
+        )
+
+        # 步骤2：处理文档
+        logger.info(f"🔄 [BG] 步骤2: 开始处理文档 (doc_id={doc_id})")
+        process_step_start = time.time()
+
         markdown_content, image_filenames = processor.process(
             file_path, doc_id, output_base_dir
         )
 
-        # 3. 保存 Markdown 文件
+        processing_time = time.time() - start_time
+        process_step_time = time.time() - process_step_start
+
+        logger.info(f"⏱️ [BG] 文档处理耗时: {processing_time:.2f}秒")
+
+        # 性能指标
+        throughput = len(markdown_content) / processing_time if processing_time > 0 else 0
+        logger.info(
+            f"📊 [BG] 性能指标: "
+            f"total_time={processing_time:.2f}s, "
+            f"markdown_size={len(markdown_content)} chars, "
+            f"images={len(image_filenames)}, "
+            f"throughput={throughput:.0f} chars/s"
+        )
+
+        # 步骤3：保存 Markdown 文件
+        logger.info(f"💾 [BG] 步骤3: 保存Markdown文件")
+        save_start = time.time()
+
         md_path = md_dir / f"{doc_id}.md"
         with open(md_path, "w", encoding="utf-8") as f:
             f.write(markdown_content)
 
+        save_time = time.time() - save_start
         logger.info(
-            f"✅ 文档处理成功: doc_id={doc_id}, "
-            f"markdown_size={len(markdown_content)}, images={len(image_filenames)}"
+            f"💾 [BG] 文件保存成功: "
+            f"path='{md_path}', "
+            f"size={len(markdown_content)} chars, "
+            f"time={save_time:.3f}s"
+        )
+
+        logger.info(
+            f"✅ [BG] 文档处理成功: "
+            f"doc_id={doc_id}, "
+            f"markdown_size={len(markdown_content)}, "
+            f"images={len(image_filenames)}, "
+            f"time={processing_time:.2f}s"
         )
 
     except Exception as e:
-        # 4. 错误处理：创建错误文件
+        # ✅ 改进：更详细的错误信息
+        processing_time = time.time() - start_time
         error_path = md_dir / f"{doc_id}.error"
+
+        # 错误时的资源状态
+        try:
+            import psutil
+            memory_mb = psutil.Process().memory_info().rss / 1024 / 1024
+        except:
+            memory_mb = 0
+
+        logger.error(
+            f"❌ [BG] 文档处理失败: "
+            f"doc_id={doc_id}, "
+            f"error={str(e)}, "
+            f"time={processing_time:.2f}s, "
+            f"memory={memory_mb:.1f}MB",
+            exc_info=True
+        )
+
         error_info = {
             "error": str(e),
             "error_type": type(e).__name__,
             "timestamp": datetime.now().isoformat(),
             "doc_id": doc_id,
             "file_path": file_path,
+            "file_type": file_type,
+            "processing_time": f"{processing_time:.2f}s",
             "traceback": __import__('traceback').format_exc()
         }
 
         with open(error_path, "w", encoding="utf-8") as f:
             json.dump(error_info, f, ensure_ascii=False, indent=2)
 
-        logger.error(
-            f"❌ 文档处理失败: doc_id={doc_id}, error={str(e)}",
-            exc_info=True
-        )
+        logger.debug(f"💾 [BG] 错误信息已保存: {error_path}")

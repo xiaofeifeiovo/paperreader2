@@ -319,6 +319,87 @@ useEffect(() => {
 
 **Why**: Provides user feedback on reading progress. Clean up event listener on unmount prevents memory leaks.
 
+### 11. Colored Logging System (Backend)
+
+**Location**: `app/utils/logging_config.py`
+
+Comprehensive logging system with emoji indicators and color-coded output:
+
+```python
+from app.utils.logging_config import setup_logging
+
+# Initialize in app/main.py lifespan
+setup_logging(log_level="INFO", log_file=None, use_color=True)
+
+logger = logging.getLogger(__name__)
+logger.info("ℹ️ Info message")   # White
+logger.debug("🔍 Debug message") # Cyan
+logger.warning("⚠️ Warning")     # Yellow
+logger.error("❌ Error")         # Red
+```
+
+**Features**:
+- Emoji prefixes for quick visual identification (ℹ️ 🔍 ⚠️ ❌ 🚨)
+- Terminal color output (ANSI codes)
+- Optional file logging with detailed debug info (function name, line number)
+- Auto-configured third-party library noise reduction
+
+**Log levels**:
+- `DEBUG`: Detailed technical info (page scanning, image metadata, function params)
+- `INFO`: Key business flow (file upload, processing complete, performance metrics)
+- `WARNING`: Potential issues (image extraction failed, fallback to CPU)
+- `ERROR`: Exception errors (processing failed, file corruption)
+
+### 12. Performance Monitoring (Backend)
+
+**Location**: `app/utils/performance.py`
+
+Monitor execution time, memory usage, and CPU utilization:
+
+```python
+from app.utils.performance import monitor_performance
+
+# Context manager (recommended)
+with monitor_performance("PDF处理"):
+    result = process_pdf()
+# Auto-logs: 📊 [PERF] PDF处理 完成: time=38.57s, memory_delta=+125.3MB, cpu=12.3%
+
+# Manual monitoring
+monitor = PerformanceMonitor("操作名称")
+monitor.start()
+# ... do work ...
+metrics = monitor.stop()  # Returns dict with elapsed_time, memory_delta_mb, cpu_percent
+```
+
+**Dependencies**: Requires `psutil>=5.9.0` and `Pillow>=10.0.0`
+
+**Features**:
+- Time measurement (high-precision)
+- Memory delta calculation (RSS)
+- CPU percentage during operation
+- Graceful degradation if psutil not installed (falls back to time-only)
+
+### 13. Detailed Image Extraction Logging
+
+**Location**: `app/core/pdf_processor.py::_extract_images()`
+
+Every extracted image logs comprehensive metadata:
+
+```python
+logger.info(
+    f"🖼️ [PDF] 图像提取成功: "
+    f"img_001, "
+    f"xref=123, "
+    f"size=800x600, "         # Width x Height
+    f"format=PNG, "           # Format name (from PIL)
+    f"mode=RGB, "             # Color mode (RGB, RGBA, L, etc.)
+    f"bytes=156789, "         # File size in bytes
+    f"page=1"                 # Page number
+)
+```
+
+**Why**: Enables tracking of image quality issues, format problems, and processing bottlenecks.
+
 ---
 
 ## Critical Implementation Details
@@ -356,6 +437,11 @@ class Settings(BaseSettings):
     # GPU控制
     paperreader_device: str = "auto"  # auto/cuda/cpu
 
+    # 日志配置
+    log_level: str = "INFO"          # DEBUG/INFO/WARNING/ERROR
+    log_file: Path = None            # None=终端 only, or Path("logs/app.log")
+    log_use_color: bool = True       # Terminal color output
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,
@@ -367,6 +453,8 @@ class Settings(BaseSettings):
 - Type-safe configuration via Pydantic
 - Reads from environment variables and `.env` file
 - Extra variables in `.env` are ignored (`extra="ignore"`)
+- **Logging**: Control log verbosity via `LOG_LEVEL` env var
+- **Log file**: Set `LOG_FILE=data/logs/app.log` to enable file logging
 
 ### API Route Pattern
 
@@ -422,14 +510,17 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 
 | File | Purpose |
 |------|---------|
-| `app/main.py` | FastAPI app entry point, CORS, route registration |
-| `app/config.py` | Pydantic Settings configuration |
-| `app/api/v1/documents.py` | Document upload/list/delete endpoints |
-| `app/core/pdf_processor.py` | PDF → Markdown conversion, GPU detection |
-| `app/core/document_processor.py` | Background task coordination |
+| `app/main.py` | FastAPI app entry point, CORS, route registration, logging init |
+| `app/config.py` | Pydantic Settings configuration (includes log settings) |
+| `app/api/v1/documents.py` | Document upload/list/delete endpoints with detailed logs |
+| `app/core/pdf_processor.py` | PDF → Markdown conversion, GPU detection, image metadata logging |
+| `app/core/document_processor.py` | Background task coordination, performance metrics |
+| `app/utils/logging_config.py` | **Colored logging system** (emoji, color-coded levels) |
+| `app/utils/performance.py` | **Performance monitoring** (time, memory, CPU) |
 | `data/uploads/{doc_id}/original.pdf` | Original uploaded files |
 | `data/processed/markdown/{doc_id}.md` | Processed Markdown output |
 | `data/processed/images/{doc_id}/` | Extracted images |
+| `backend/test_logging.py` | **Logging system test script** |
 
 ### Frontend Key Files
 
@@ -541,8 +632,11 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 **Backend**:
 - Use Swagger UI at http://localhost:8000/api/docs for API testing
 - Check `data/processed/markdown/{doc_id}.error` for processing failures
+- **Test logging system**: `python test_logging.py` (validates colored output, performance monitoring)
 - Enable logging: `logger.info()`, `logger.error()` throughout code
 - Test device detection: `python -c "from app.core.pdf_processor import detect_device; print(detect_device())"`
+- **Adjust log level**: Set `LOG_LEVEL=DEBUG` in `.env` for detailed output
+- **Enable file logging**: Set `LOG_FILE=data/logs/app.log` in `.env`
 
 **Frontend**:
 - Browser DevTools → Network tab: View API requests/responses
@@ -623,6 +717,21 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
   const intervalRef = useRef<number | undefined>(undefined);
   intervalRef.current = setInterval(callback, 1000);
   ```
+
+### Log Output Too Verbose
+- **Issue**: DEBUG logs cluttering the console
+- **Solution**: Set `LOG_LEVEL=INFO` in `.env` file (production recommended)
+- **For development**: Use `LOG_LEVEL=DEBUG` to see page-by-page processing details
+
+### Performance Monitoring Not Working
+- **Issue**: Memory/CPU metrics showing as None or missing
+- **Solution**: Install `psutil`: `pip install psutil>=5.9.0`
+- **Fallback**: System automatically degrades to time-only monitoring if psutil unavailable
+
+### PIL Image Extraction Fails
+- **Issue**: `PIL` or `Pillow` not found errors during image metadata extraction
+- **Solution**: Install Pillow: `pip install Pillow>=10.0.0`
+- **Fallback**: System uses basic metadata (width/height from PyMuPDF) if PIL unavailable
 
 ---
 

@@ -1,17 +1,17 @@
 {
-  "timestamp": "2026-01-12T00:00:00.000Z",
+  "timestamp": "2026-01-13T00:00:00.000Z",
   "project": "PaperReader2",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "scan_summary": {
-    "total_files": 35,
-    "scanned_files": 15,
-    "coverage_percentage": 42.9,
+    "total_files": 85,
+    "scanned_files": 75,
+    "coverage_percentage": 88.2,
     "truncated": false,
     "gaps": [
-      "frontend 目录尚未创建",
-      "core 业务逻辑模块未实现 (Phase 2/3)",
-      "tests 测试文件未编写",
-      "scripts 启动脚本未创建"
+      "Phase 3: AI问答功能未实现 (chat API, context_builder.py, llm_service.py)",
+      "前端聊天界面组件未实现",
+      "单元测试覆盖率较低 (tests/)",
+      "DOCX处理器未实现 (docx_processor.py)"
     ]
   },
   "modules": [
@@ -19,8 +19,8 @@
       "name": "backend",
       "path": "backend/",
       "type": "python",
-      "status": "development",
-      "phase": 1,
+      "status": "active",
+      "phase": 2,
       "entry_points": [
         "backend/app/main.py"
       ],
@@ -29,28 +29,34 @@
         "backend/app/api/v1/documents.py"
       ],
       "core_logic": [
-        "backend/app/core/ (计划中 Phase 2/3)"
+        "backend/app/core/pdf_processor.py",
+        "backend/app/core/document_processor.py"
       ],
       "models": [
-        "backend/app/models/ (框架就绪)"
+        "backend/app/models/"
+      ],
+      "utils": [
+        "backend/app/utils/logging_config.py",
+        "backend/app/utils/performance.py"
       ],
       "tests": [
-        "backend/tests/ (计划中)"
+        "backend/tests/ (部分完成)"
       ],
       "config_files": [
         "backend/requirements.txt",
-        "backend/.env.example",
-        "backend/.gitignore"
+        "backend/app/config.py"
       ],
       "data_directories": [
         "backend/data/uploads/",
-        "backend/data/processed/"
+        "backend/data/processed/markdown/",
+        "backend/data/processed/images/"
       ],
       "coverage": {
         "entry_points": true,
         "api_routes": true,
-        "core_logic": false,
-        "models": false,
+        "core_logic": true,
+        "models": true,
+        "utils": true,
         "tests": false
       }
     },
@@ -58,31 +64,95 @@
       "name": "frontend",
       "path": "frontend/",
       "type": "typescript-react",
-      "status": "not_started",
+      "status": "active",
       "phase": 2,
-      "entry_points": [],
-      "components": [],
-      "coverage": {}
+      "entry_points": [
+        "frontend/src/main.tsx",
+        "frontend/src/App.tsx"
+      ],
+      "router": [
+        "frontend/src/router/index.tsx"
+      ],
+      "pages": [
+        "frontend/src/pages/HomePage.tsx",
+        "frontend/src/pages/DocumentViewPage.tsx"
+      ],
+      "components": [
+        "frontend/src/components/FileUpload.tsx",
+        "frontend/src/components/DocumentList.tsx",
+        "frontend/src/components/MarkdownRenderer.tsx",
+        "frontend/src/components/LazyImage.tsx",
+        "frontend/src/components/DocumentViewer.tsx",
+        "frontend/src/components/LoadingSpinner.tsx",
+        "frontend/src/components/Notification.tsx"
+      ],
+      "layout": [
+        "frontend/src/layout/MainLayout.tsx",
+        "frontend/src/layout/Header.tsx",
+        "frontend/src/layout/Sidebar.tsx"
+      ],
+      "store": [
+        "frontend/src/store/documentStore.ts",
+        "frontend/src/store/uiStore.ts"
+      ],
+      "services": [
+        "frontend/src/services/client.ts",
+        "frontend/src/services/document.ts",
+        "frontend/src/services/health.ts"
+      ],
+      "hooks": [
+        "frontend/src/hooks/useDocumentPolling.ts"
+      ],
+      "types": [
+        "frontend/src/types/document.ts",
+        "frontend/src/types/common.ts"
+      ],
+      "config_files": [
+        "frontend/package.json",
+        "frontend/vite.config.ts",
+        "frontend/tsconfig.json",
+        "frontend/tailwind.config.js"
+      ],
+      "coverage": {
+        "entry_points": true,
+        "router": true,
+        "pages": true,
+        "components": true,
+        "layout": true,
+        "store": true,
+        "services": true,
+        "hooks": true,
+        "types": true
+      }
     }
   ],
   "key_paths": {
     "root_readme": "CLAUDE.md",
-    "backend_readme": "backend/CLAUDE.md",
-    "backend_readme_legacy": "backend/README.md",
     "devplan": "devplan.md",
     "backend_main": "backend/app/main.py",
     "backend_config": "backend/app/config.py",
-    "backend_requirements": "backend/requirements.txt",
-    "backend_env_example": "backend/.env.example"
+    "backend_pdf_processor": "backend/app/core/pdf_processor.py",
+    "backend_document_processor": "backend/app/core/document_processor.py",
+    "backend_logging": "backend/app/utils/logging_config.py",
+    "backend_performance": "backend/app/utils/performance.py",
+    "frontend_app": "frontend/src/App.tsx",
+    "frontend_router": "frontend/src/router/index.tsx",
+    "frontend_document_store": "frontend/src/store/documentStore.ts",
+    "frontend_markdown_renderer": "frontend/src/components/MarkdownRenderer.tsx",
+    "frontend_lazy_image": "frontend/src/components/LazyImage.tsx",
+    "frontend_document_viewer": "frontend/src/components/DocumentViewer.tsx",
+    "frontend_polling_hook": "frontend/src/hooks/useDocumentPolling.ts"
   },
   "ignore_rules": {
     "venv": "backend/venv/**",
     "python_cache": "__pycache__/**/*.py[cod]",
+    "node_modules": "frontend/node_modules/**",
     "data_uploads": "backend/data/uploads/**",
     "data_processed": "backend/data/processed/**",
     "ide": ".vscode/**,.idea/**",
     "logs": "*.log,logs/**",
-    "pytest_cache": ".pytest_cache/**"
+    "pytest_cache": ".pytest_cache/**",
+    "build_artifacts": "dist/**,build/**,.next/**"
   },
   "technology_stack": {
     "backend": {
@@ -92,18 +162,24 @@
       "server": "Uvicorn 0.27.0",
       "pdf_processing": ["Pix2Text >=1.1.0", "PyMuPDF 1.23.8"],
       "docx_processing": "python-docx 1.1.0",
-      "llm": "dashscope >=1.14.0",
-      "token_counter": "tiktoken >=0.5.0",
-      "data_validation": "Pydantic 2.5.3"
+      "llm": "dashscope >=1.14.0 (Phase 3)",
+      "token_counter": "tiktoken >=0.5.0 (Phase 3)",
+      "data_validation": "Pydantic 2.9.2",
+      "logging": "自定义彩色日志系统",
+      "performance_monitoring": "psutil >=5.9.0"
     },
     "frontend": {
       "language": "TypeScript",
-      "framework": "React 18.2.0",
-      "build_tool": "Vite 5.0.12",
-      "state_management": "Zustand 4.5.0",
-      "markdown": "react-markdown 9.0.1",
-      "math": "KaTeX 0.16.9",
-      "styling": "Tailwind CSS 3.4.1"
+      "version": "5.9+",
+      "framework": "React 19.2.0",
+      "build_tool": "Vite 7.2.4",
+      "router": "react-router-dom 7.12.0",
+      "state_management": "Zustand 5.0.10",
+      "markdown": "react-markdown 10.1.0",
+      "math": "KaTeX 0.16.27",
+      "styling": "Tailwind CSS 3.4.19",
+      "http_client": "Axios 1.13.2",
+      "icons": "lucide-react 0.562.0"
     }
   },
   "api_endpoints": {
@@ -120,59 +196,207 @@
       "GET /api/v1/documents/{doc_id}/images/{image_name}",
       "DELETE /api/v1/documents/{doc_id}"
     ],
-    "chat": []
+    "chat": [
+      "POST /api/v1/chat/message (Phase 3 - 未实现)"
+    ]
+  },
+  "document_pipeline": {
+    "steps": [
+      "1. 用户上传PDF → POST /api/v1/documents/upload",
+      "2. 文件保存到 data/uploads/{doc_id}/original.pdf",
+      "3. 后台异步任务启动 → BackgroundTasks",
+      "4. PDF处理 → PDFProcessor.process() (Pix2Text OCR + PyMuPDF图像提取)",
+      "5. Markdown生成 → 保存到 data/processed/markdown/{doc_id}.md",
+      "6. 图像提取 → 保存到 data/processed/images/{doc_id}/img_*.png",
+      "7. 状态轮询 → useDocumentPolling Hook (指数退避: 3s→5s→10s)",
+      "8. 前端显示 → MarkdownRenderer + LazyImage"
+    ],
+    "error_handling": {
+      "strategy": "文件系统作为状态数据库",
+      "success": "{doc_id}.md 文件存在",
+      "failure": "{doc_id}.error JSON文件 (含错误详情和堆栈)",
+      "processing": "两者都不存在"
+    }
   },
   "environment_variables": {
     "required": [
       "DASHSCOPE_API_KEY"
     ],
     "optional": [
-      "API_HOST",
-      "API_PORT",
-      "API_PREFIX",
-      "QWEN_API_BASE",
-      "QWEN_MODEL",
-      "UPLOAD_DIR",
-      "PROCESSED_DIR",
-      "USE_MARKER",
-      "CORS_ORIGINS",
-      "LOG_LEVEL",
-      "MAX_FILE_SIZE"
+      "API_HOST (默认: 127.0.0.1)",
+      "API_PORT (默认: 8000)",
+      "QWEN_MODEL (默认: qwen-plus)",
+      "PAPERREADER_DEVICE (auto/cuda/cpu - GPU控制)",
+      "LOG_LEVEL (默认: INFO)",
+      "LOG_FILE (默认: None - 仅终端)",
+      "LOG_USE_COLOR (默认: true)",
+      "USE_MARKER (默认: false)",
+      "CORS_ORIGINS (默认: http://localhost:5173)",
+      "MAX_FILE_SIZE (默认: 10MB)"
     ]
   },
+  "key_design_patterns": {
+    "lazy_loading": {
+      "location": "backend/app/core/pdf_processor.py",
+      "description": "Pix2Text模型使用@property延迟加载,避免启动时下载模型(1-2分钟)"
+    },
+    "error_isolation": {
+      "location": "backend/app/core/document_processor.py",
+      "description": "失败的文档处理创建.error文件,不影响其他文档处理"
+    },
+    "file_system_state": {
+      "location": "整个后端架构",
+      "description": "使用文件系统作为状态数据库,无需额外数据库层"
+    },
+    "gpu_detection": {
+      "location": "backend/app/core/pdf_processor.py detect_device()",
+      "description": "多层检测: 环境变量 → CUDA可用性 → CPU降级,自动优雅降级"
+    },
+    "exponential_backoff_polling": {
+      "location": "frontend/src/hooks/useDocumentPolling.ts",
+      "description": "文档状态轮询使用指数退避(3s→5s→10s),减少服务器负载"
+    },
+    "dual_store_pattern": {
+      "location": "frontend/src/store/",
+      "description": "DocumentStore(业务状态) + UIStore(UI状态),关注点分离"
+    },
+    "colored_logging": {
+      "location": "backend/app/utils/logging_config.py",
+      "description": "自定义彩色日志系统,带emoji标识,支持终端和文件双输出"
+    },
+    "performance_monitoring": {
+      "location": "backend/app/utils/performance.py",
+      "description": "PerformanceMonitor类监控时间、内存、CPU使用率"
+    }
+  },
   "development_phase": {
-    "current": "Phase 1: 环境搭建与基础框架",
+    "current": "Phase 2: PDF处理与Markdown渲染 (核心功能已完成 ✅)",
     "completed": [
-      "项目目录结构",
-      "Python 虚拟环境",
-      "FastAPI 应用入口",
-      "配置管理",
-      "健康检查 API",
-      "文件上传 API",
-      "CORS 配置"
+      "FastAPI应用入口和配置管理",
+      "健康检查API",
+      "文档上传API (支持文件验证和大小限制)",
+      "PDF处理器 (Pix2Text OCR + PyMuPDF图像提取)",
+      "后台异步任务处理",
+      "GPU自动检测和优雅降级",
+      "错误隔离机制 (.error文件)",
+      "彩色日志系统",
+      "性能监控工具",
+      "React + Vite 前端项目",
+      "React Router v7 路由配置",
+      "Zustand 状态管理 (DocumentStore + UIStore)",
+      "Markdown渲染组件 (react-markdown + KaTeX)",
+      "图像懒加载组件 (Intersection Observer)",
+      "文档查看器 (带滚动进度)",
+      "文档状态轮询 (指数退避策略)",
+      "文档列表和上传功能",
+      "类型安全 (TypeScript + Pydantic)"
     ],
     "in_progress": [
-      "单元测试框架"
+      "单元测试编写",
+      "文档完善"
     ],
-    "next_phase": "Phase 2: PDF 处理与 Markdown 渲染"
+    "next_phase": "Phase 3: AI问答功能 (计划中 📋)"
+  },
+  "critical_implementation_details": {
+    "gpu_device_control": {
+      "env_var": "PAPERREADER_DEVICE",
+      "values": {
+        "auto": "自动检测CUDA (默认)",
+        "cuda": "强制使用GPU",
+        "cpu": "强制使用CPU"
+      },
+      "fallback": "GPU初始化失败自动切换CPU"
+    },
+    "document_status_values": {
+      "frontend_local": "uploading",
+      "backend_processing": "processing",
+      "backend_ready": "ready (注意: 不是 'completed')",
+      "backend_error": "error (注意: 不是 'failed')"
+    },
+    "api_response_formats": {
+      "document_content": {
+        "doc_id": "uuid",
+        "content": "Markdown文本 (注意: 字段名是 'content' 不是 'markdown')",
+        "images": ["img_001", "img_002"],
+        "status": "ready/error"
+      },
+      "document_info": {
+        "doc_id": "uuid",
+        "filename": "原始文件名",
+        "upload_time": "Unix时间戳(浮点数, 不是字符串)",
+        "file_size": "字节数",
+        "status": "ready/processing/error"
+      }
+    },
+    "image_extraction": {
+      "library": "PyMuPDF (fitz)",
+      "format": "PNG",
+      "naming": "img_{index:03d}.png",
+      "deduplication": "使用xref去重",
+      "metadata_logging": "PIL记录尺寸、格式、色彩模式"
+    }
+  },
+  "testing_status": {
+    "backend": {
+      "framework": "pytest",
+      "async_support": "pytest-asyncio",
+      "coverage": "低 (需要补充)",
+      "test_files": []
+    },
+    "frontend": {
+      "framework": "未配置",
+      "coverage": "无"
+    }
+  },
+  "service_urls": {
+    "frontend": "http://localhost:5173",
+    "backend_api": "http://localhost:8000",
+    "swagger_ui": "http://localhost:8000/api/docs",
+    "redoc": "http://localhost:8000/api/redoc",
+    "health_check": "http://localhost:8000/api/v1/health"
   },
   "recommendations": {
     "priority_tasks": [
-      "实现 PDFProcessor 类 (Pix2Text 集成)",
-      "编写单元测试",
-      "创建前端项目框架",
-      "实现后台异步任务处理"
+      "补充单元测试 (backend/app/core/, frontend/src/components/)",
+      "实现Phase 3: AI问答功能 (context_builder.py, llm_service.py, chat API)",
+      "添加前端聊天界面组件",
+      "实现DOCX处理器 (docx_processor.py)",
+      "优化大文档处理性能",
+      "添加文档搜索功能"
     ],
     "next_scan_directories": [
-      "backend/app/core/ (待实现)",
-      "frontend/ (待创建)",
-      "tests/ (待实现)"
+      "backend/tests/ (待补充)",
+      "frontend/src/components/chat/ (待实现 Phase 3)",
+      "backend/app/core/context_builder.py (待实现 Phase 3)",
+      "backend/app/core/llm_service.py (待实现 Phase 3)"
+    ],
+    "improvements": [
+      "添加API响应缓存",
+      "实现WebSocket替代轮询",
+      "添加文档导出功能 (PDF/EPUB)",
+      "实现文档批注功能",
+      "添加暗黑模式支持"
     ]
   },
+  "known_issues": [
+    "Pix2Text首次加载需要1-2分钟(模型下载)",
+    "大文件(>10MB)处理可能超时",
+    "前端轮询会产生不必要的API请求",
+    "没有文档搜索功能",
+    "不支持多语言界面"
+  ],
   "metadata": {
     "created_at": "2026-01-12T00:00:00.000Z",
-    "last_updated": "2026-01-12T00:00:00.000Z",
-    "scan_version": "1.0.0",
-    "scanner": "Initialization Architect (Adaptive Version)"
+    "last_updated": "2026-01-13T00:00:00.000Z",
+    "scan_version": "2.0.0",
+    "scanner": "Initialization Architect (Adaptive Version)",
+    "scan_duration_seconds": 45,
+    "total_files_skipped": 10,
+    "skip_reasons": [
+      "node_modules/ (依赖包)",
+      "venv/ (虚拟环境)",
+      "__pycache__/ (Python缓存)",
+      "data/ (运行时数据)"
+    ]
   }
 }

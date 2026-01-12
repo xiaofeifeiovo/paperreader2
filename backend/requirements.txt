@@ -25,6 +25,8 @@ pydantic-settings==2.1.0
 # 工具
 aiofiles==23.2.1
 python-dotenv==1.0.0
+psutil>=5.9.0             # 系统资源监控
+Pillow>=10.0.0            # 图像处理(PIL)
 
 # 开发工具
 pytest>=7.4.0

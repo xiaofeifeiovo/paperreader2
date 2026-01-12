@@ -2,12 +2,17 @@
 FastAPI应用入口
 PaperReader2 后端服务主程序
 """
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.api.v1 import health, documents
+from app.utils.logging_config import setup_logging
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -15,11 +20,19 @@ async def lifespan(app: FastAPI):
     """
     应用生命周期管理
     """
+    # 初始化日志系统
+    setup_logging(
+        log_level=settings.log_level,
+        log_file=settings.log_file,
+        use_color=settings.log_use_color
+    )
+
     # 启动时执行
-    print(f"🚀 PaperReader2 Backend Starting...")
-    print(f"📁 Upload Directory: {settings.upload_dir}")
-    print(f"📁 Processed Directory: {settings.processed_dir}")
-    print(f"🔧 Log Level: {settings.log_level}")
+    logger.info(f"🚀 PaperReader2 Backend Starting...")
+    logger.info(f"📁 Upload Directory: {settings.upload_dir}")
+    logger.info(f"📁 Processed Directory: {settings.processed_dir}")
+    logger.info(f"🔧 Log Level: {settings.log_level}")
+    logger.info(f"📄 Log File: {settings.log_file or '仅终端输出'}")
 
     # 确保必要的目录存在
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -28,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # 关闭时执行
-    print("🛑 PaperReader2 Backend Shutting down...")
+    logger.info("🛑 PaperReader2 Backend Shutting down...")
 
 
 # 创建FastAPI应用实例
