@@ -145,23 +145,29 @@ async def process_document_background(
             f"time={processing_time:.2f}s"
         )
 
-        # ✅ 添加处理完成摘要
-        if image_filenames:
-            logger.info(f"📊 [BG] 处理完成摘要:")
-            logger.info(f"   ├─ 文档ID: {doc_id}")
-            logger.info(f"   ├─ Markdown大小: {len(markdown_content)} 字符")
-            logger.info(f"   ├─ 图片数量: {len(image_filenames)}")
-            logger.info(f"   ├─ 图片目录: {output_base_dir / 'images' / doc_id}")
-            logger.info(f"   └─ 处理时间: {processing_time:.2f}秒")
+        # ✅ 添加处理完成摘要（独立错误处理，避免日志错误影响核心业务）
+        try:
+            if image_filenames:
+                # 提前定义 image_dir，复用变量（DRY 原则）
+                image_dir = Path(output_base_dir) / "images" / doc_id
 
-            # 列出所有图片文件
-            image_dir = Path(output_base_dir) / "images" / doc_id
-            if image_dir.exists():
-                actual_images = list(image_dir.glob("img_*.png"))
-                logger.info(f"🖼️ [BG] 实际图片文件验证: {len(actual_images)} 个文件")
-                for img_path in sorted(actual_images):
-                    file_size = img_path.stat().st_size
-                    logger.info(f"   ├─ {img_path.name}: {file_size} 字节")
+                logger.info(f"📊 [BG] 处理完成摘要:")
+                logger.info(f"   ├─ 文档ID: {doc_id}")
+                logger.info(f"   ├─ Markdown大小: {len(markdown_content)} 字符")
+                logger.info(f"   ├─ 图片数量: {len(image_filenames)}")
+                logger.info(f"   ├─ 图片目录: {image_dir}")
+                logger.info(f"   └─ 处理时间: {processing_time:.2f}秒")
+
+                # 列出所有图片文件
+                if image_dir.exists():
+                    actual_images = list(image_dir.glob("img_*.png"))
+                    logger.info(f"🖼️ [BG] 实际图片文件验证: {len(actual_images)} 个文件")
+                    for img_path in sorted(actual_images):
+                        file_size = img_path.stat().st_size
+                        logger.info(f"   ├─ {img_path.name}: {file_size} 字节")
+        except Exception as log_error:
+            # 日志打印失败不影响处理结果
+            logger.warning(f"⚠️ [BG] 摘要打印失败（不影响结果）: {log_error}")
 
     except Exception as e:
         # ✅ 改进：更详细的错误信息
