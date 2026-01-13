@@ -7,7 +7,7 @@ httpx<0.28.0  # 限制版本以兼容 starlette testclient
 # PDF处理
 pix2text>=1.1.0           # 主要方案:OCR + 公式识别
 pymupdf==1.23.8           # 图像提取
-# marker-pdf>=0.2.6       # 升级选项(注释,按需启用)
+marker-pdf>=0.2.6         # 高精度PDF转Markdown(可选,需要5GB+ VRAM)
 
 # DOCX处理
 python-docx==1.1.0
@@ -20,7 +20,7 @@ tiktoken>=0.5.0
 
 # 数据处理
 pydantic>=2.9.2,<3.0.0
-pydantic-settings==2.1.0
+pydantic-settings>=2.2.1,<3.0.0
 
 # 工具
 aiofiles==23.2.1

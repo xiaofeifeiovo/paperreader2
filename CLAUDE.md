@@ -17,8 +17,14 @@ venv\Scripts\activate.bat    # Windows CMD
 # Install dependencies
 pip install -r requirements.txt
 
+# Optional: Install Marker PDF converter (high-quality, requires 5GB+ VRAM)
+pip install marker-pdf>=0.2.6
+
 # Set required environment variable (PowerShell)
 $env:DASHSCOPE_API_KEY="your-api-key-here"
+
+# Optional: Force CPU mode (set before starting server)
+$env:PAPERREADER_DEVICE="cpu"
 
 # Start development server
 python -m app.main
@@ -83,19 +89,22 @@ File System Storage
 
 1. **Upload** (`app/api/v1/documents.py`):
    - User uploads PDF → `POST /api/v1/documents/upload`
+   - **Optional**: `converter` parameter (`pix2text` or `marker`)
    - File validated, UUID generated as `doc_id`
    - Saved to `data/uploads/{doc_id}/original.pdf`
    - Background task added to `BackgroundTasks`
 
 2. **Background Processing** (`app/core/document_processor.py`):
    - `process_document_background()` runs asynchronously
-   - Calls `PDFProcessor.process()` from `app/core/pdf_processor.py`
+   - Passes `converter` parameter to `PDFProcessor`
 
 3. **PDF Processing** (`app/core/pdf_processor.py`):
-   - **Lazy Loading**: Pix2Text model loaded via `@property` on first access
-   - **OCR Recognition**: `Pix2Text.recognize_pdf()` → Markdown text with LaTeX formulas
+   - **PDFProcessor Facade**: Dynamically loads converter based on parameter
+   - **Lazy Loading**: Converter model loaded via `@property` on first access
+   - **Strategy Selection**: Pix2Text (fast) or Marker (high-quality)
+   - **OCR Recognition**: Converter's `convert_to_markdown()` → Markdown text
    - **Image Extraction**: PyMuPDF extracts images → saved to `data/processed/images/{doc_id}/`
-   - **Markdown Generation**: Combines OCR text + image references → final Markdown
+   - **Graceful Degradation**: If Marker unavailable, auto-fallback to Pix2Text
 
 4. **State Tracking** (File System as State Store):
    - Success: `data/processed/markdown/{doc_id}.md` created
@@ -400,20 +409,96 @@ logger.info(
 
 **Why**: Enables tracking of image quality issues, format problems, and processing bottlenecks.
 
+### 14. Strategy Pattern (PDF Converters)
+
+**Location**: `app/core/pdf_processor.py`, `app/core/converters/`
+
+**Architecture**: Pluggable PDF converter selection via Strategy Pattern
+
+```python
+# Abstract Interface
+class PDFConverterBase(ABC):
+    @abstractmethod
+    def convert_to_markdown(self, pdf_path, doc_id, output_base_dir) -> Tuple[str, List[str]]:
+        pass
+
+# Concrete Implementations
+class Pix2TextConverter(PDFConverterBase):
+    # Fast, formula-focused
+
+class MarkerConverter(PDFConverterBase):
+    # High-quality, layout-focused
+
+# Facade with Dynamic Loading
+class PDFProcessor:
+    CONVERTERS = {
+        "pix2text": "app.core.converters.pix2text_converter.Pix2TextConverter",
+        "marker": "app.core.converters.marker_converter.MarkerConverter",
+    }
+
+    def __init__(self, converter: str = "pix2text"):
+        self.converter_impl = self._load_converter(converter)  # Lazy loading
+
+    def process(self, pdf_path, doc_id, output_base_dir):
+        return self.converter_impl.convert_to_markdown(pdf_path, doc_id, output_base_dir)
+```
+
+**Benefits**:
+- **Lazy Loading**: Only loads selected converter, saves memory
+- **Graceful Degradation**: Auto-fallback to Pix2Text if Marker unavailable
+- **Extensibility**: Add new converters without modifying existing code
+- **Type Safety**: ConverterType enum ensures valid converter names
+
+**Frontend Integration**:
+```typescript
+// User selects converter in dropdown
+const [selectedConverter, setSelectedConverter] = useState<ConverterType>('pix2text');
+
+// Pass to upload service
+await uploadDocument(file, selectedConverter);
+```
+
 ---
 
 ## Critical Implementation Details
 
-### PDF Processing Switch
+### PDF Processing Architecture (Strategy Pattern)
 
-**Location**: `app/core/pdf_processor.py`
+**Location**: `app/core/pdf_processor.py`, `app/core/converters/`
 
-Two PDF processing engines supported via `USE_MARKER` environment variable:
+The PDF processing system uses a **Strategy Pattern** with pluggable converters:
 
-- **Pix2Text** (default): Fast (3-5 sec/page), formula recognition, production-ready
-- **marker-pdf**: Higher quality for complex layouts, optional upgrade
+```
+PDFProcessor (Facade)
+    ↓
+PDFConverterBase (Abstract Interface)
+    ↓
+├── Pix2TextConverter (Fast, formula-focused)
+└── MarkerConverter (High-quality, layout-focused)
+```
 
-Currently only Pix2Text is implemented. marker-pdf support is commented out in `requirements.txt`.
+**Converter Selection** via API parameter:
+```python
+# Backend API
+POST /api/v1/documents/upload?converter=pix2text  # Default
+POST /api/v1/documents/upload?converter=marker    # High quality
+```
+
+**Frontend Selection** via dropdown in `FileUpload.tsx`:
+- **Pix2Text**: 3-5 sec/page, ~500MB VRAM, best for academic papers
+- **Marker**: 8-15 sec/page, ~5GB VRAM, best for complex layouts/tables
+
+**Graceful Degradation**:
+- If `marker-pdf` not installed, automatically falls back to `pix2text`
+- If GPU initialization fails, automatically retries with CPU
+- Logged warning: `⚠️ marker-pdf未安装,自动降级到pix2text`
+
+**Adding New Converters**:
+1. Create `app/core/converters/new_converter.py` inheriting `PDFConverterBase`
+2. Implement `convert_to_markdown(pdf_path, doc_id, output_base_dir) -> (markdown, images)`
+3. Add to `PDFProcessor.CONVERTERS` dict
+4. Add to `app/models/document.py` `ConverterType` enum
+5. Update frontend `CONVERTER_OPTIONS` in `types/document.ts`
 
 ### Token Management Strategy
 
@@ -513,8 +598,12 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 | `app/main.py` | FastAPI app entry point, CORS, route registration, logging init |
 | `app/config.py` | Pydantic Settings configuration (includes log settings) |
 | `app/api/v1/documents.py` | Document upload/list/delete endpoints with detailed logs |
-| `app/core/pdf_processor.py` | PDF → Markdown conversion, GPU detection, image metadata logging |
+| `app/core/pdf_processor.py` | **PDF Processor Facade** - dynamic converter selection |
+| `app/core/converters/base.py` | **PDFConverterBase** - abstract interface for converters |
+| `app/core/converters/pix2text_converter.py` | Pix2Text implementation (fast, formula-focused) |
+| `app/core/converters/marker_converter.py` | Marker implementation (high-quality, layout-focused) |
 | `app/core/document_processor.py` | Background task coordination, performance metrics |
+| `app/models/document.py` | **ConverterType** enum for converter selection |
 | `app/utils/logging_config.py` | **Colored logging system** (emoji, color-coded levels) |
 | `app/utils/performance.py` | **Performance monitoring** (time, memory, CPU) |
 | `data/uploads/{doc_id}/original.pdf` | Original uploaded files |
@@ -528,12 +617,13 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 |------|---------|
 | `src/App.tsx` | Router setup with RouterProvider |
 | `src/router/index.tsx` | Route configuration (react-router-dom v7) |
+| `src/types/document.ts` | **ConverterType, CONVERTER_OPTIONS** - PDF converter selection |
 | `src/services/client.ts` | Axios instance configuration |
-| `src/services/document.ts` | Document API service class |
-| `src/store/documentStore.ts` | Document state management (includes fetchDocumentContent) |
+| `src/services/document.ts` | Document API service (uploadDocument accepts converter param) |
+| `src/store/documentStore.ts` | Document state management (uploadDocument with converter) |
 | `src/store/uiStore.ts` | UI state (sidebar, notifications) |
 | `src/hooks/useDocumentPolling.ts` | Document status polling with exponential backoff |
-| `src/components/FileUpload.tsx` | Upload with drag-and-drop |
+| `src/components/FileUpload.tsx` | **Upload with converter dropdown** (drag-and-drop) |
 | `src/components/DocumentList.tsx` | Document list with status badges |
 | `src/components/MarkdownRenderer.tsx` | Markdown + LaTeX rendering (react-markdown + KaTeX) |
 | `src/components/LazyImage.tsx` | Image lazy loading with Intersection Observer |
@@ -733,6 +823,19 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 - **Solution**: Install Pillow: `pip install Pillow>=10.0.0`
 - **Fallback**: System uses basic metadata (width/height from PyMuPDF) if PIL unavailable
 
+### Marker Converter Not Available
+- **Issue**: User selects "Marker" converter but gets automatic fallback to Pix2Text
+- **Solution**: Install marker-pdf: `pip install marker-pdf>=0.2.6`
+- **Requirements**: Marker needs 5GB+ GPU VRAM, Python 3.10+, PyTorch 2.7.0+
+- **Fallback**: System logs warning and uses Pix2Text automatically if Marker unavailable
+- **Check logs**: Look for `⚠️ marker-pdf未安装,自动降级到pix2text`
+
+### Converter Parameter Missing
+- **Issue**: Frontend doesn't send converter parameter, API returns 422 error
+- **Solution**: Ensure frontend passes `formData.append('converter', converter)` in uploadDocument
+- **Default value**: Backend defaults to `pix2text` if parameter not provided
+- **Type check**: Verify ConverterType enum matches between backend (`app/models/document.py`) and frontend (`src/types/document.ts`)
+
 ---
 
 ## Related Documentation
@@ -740,5 +843,6 @@ npm install react-markdown remark-math rehype-katex remark-gfm react-router-dom 
 - **README.md**: Project overview, features, installation guide (user-facing)
 - **devplan.md**: Complete development roadmap and phase planning
 - **devplan_phase2_frontend.md**: Phase 2 frontend implementation details (Markdown rendering, routing, polling)
+- **devplan_phase2_marker.md**: Phase 2 Marker PDF converter architecture (Strategy Pattern implementation)
 - **backend/CLAUDE.md**: Backend-specific deep-dive
 - **API Docs**: http://localhost:8000/api/docs (Swagger UI when backend running)

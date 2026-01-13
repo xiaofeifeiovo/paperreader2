@@ -57,8 +57,20 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   const handleError = () => {
     setIsError(true);
     setIsLoaded(false);
-    // ✅ 改进：在控制台记录失败的URL，便于调试
-    console.error(`LazyImage: 加载失败 - ${alt}`, src);
+
+    // ✅ 增强日志: 记录详细的加载失败信息
+    console.group('❌ [LazyImage] 图片加载失败');
+    console.error('  🖼️ Alt文本:', alt);
+    console.error('  🔗 图片URL:', src);
+    console.error('  📄 当前页面URL:', window.location.href);
+    console.error('  💡 可能的原因:');
+    console.error('     1. URL缺少.png扩展名');
+    console.error('     2. 后端图片文件不存在');
+    console.error('     3. CORS配置问题');
+    console.error('  🔍 调试建议:');
+    console.error(`     - 直接访问URL验证: ${src}`);
+    console.error(`     - 检查后端日志`);
+    console.groupEnd();
   };
 
   return (

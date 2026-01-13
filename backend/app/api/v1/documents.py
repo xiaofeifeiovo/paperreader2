@@ -3,7 +3,7 @@
 提供文档上传、查询、删除等功能
 """
 import logging
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pathlib import Path
@@ -14,6 +14,7 @@ from datetime import datetime
 
 from app.config import settings
 from app.core.document_processor import process_document_background
+from app.models.document import ConverterType
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 logger = logging.getLogger(__name__)
@@ -51,14 +52,40 @@ class MessageResponse(BaseModel):
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
+    converter: ConverterType = Form(ConverterType.pix2text),
     background_tasks: BackgroundTasks = None
 ) -> DocumentUploadResponse:
     """
     上传文档并保存到本地
 
     支持格式: PDF, DOCX
+
+    ✅ 新增参数:
+    - converter: PDF转换器选择
+      - pix2text: 快速OCR+公式识别(默认),速度3-5秒/页
+      - marker: 高精度布局识别,速度8-15秒/页,质量更高
+
+    转换器选择建议:
+    - 学术论文、公式多的文档 → pix2text
+    - 复杂布局、表格密集文档 → marker
     """
-    logger.info(f"📤 [API] 收到上传请求: filename='{file.filename}', content_type='{file.content_type}'")
+    # 🔍 调试日志：详细的接收参数信息
+    logger.info("=" * 60)
+    logger.info("📤 [API] ===== 上传请求详情 =====")
+    logger.info(f"📤 [API] filename: {file.filename}")
+    logger.info(f"📤 [API] content_type: {file.content_type}")
+    logger.info(f"📤 [API] converter参数类型: {type(converter)}")
+    logger.info(f"📤 [API] converter参数值: {converter}")
+    logger.info(f"📤 [API] converter.value: {converter.value}")
+    logger.info(f"📤 [API] converter类型名称: {converter.__class__.__name__}")
+    logger.info("=" * 60)
+
+    logger.info(
+        f"📤 [API] 收到上传请求: "
+        f"filename='{file.filename}', "
+        f"content_type='{file.content_type}', "
+        f"converter='{converter.value}'"
+    )
 
     # 1. 验证文件格式
     allowed_extensions = ['.pdf', '.docx']
@@ -104,14 +131,26 @@ async def upload_document(
 
     # 添加后台处理任务
     if background_tasks:
-        logger.info(f"⚙️ [API] 添加后台处理任务: doc_id={doc_id}, file_type={file_ext[1:]}")
+        logger.info(
+            f"⚙️ [API] 添加后台处理任务: "
+            f"doc_id={doc_id}, "
+            f"file_type={file_ext[1:]}, "
+            f"converter={converter.value}"
+        )
         background_tasks.add_task(
             process_document_background,
             doc_id=doc_id,
             file_path=str(file_path),
             file_type=file_ext[1:],  # 去掉点号，如 "pdf"
-            output_base_dir=str(settings.processed_dir)
+            output_base_dir=str(settings.processed_dir),
+            converter=converter.value  # ✅ 新增参数
         )
+
+    # 根据转换器生成不同的提示消息
+    converter_desc = {
+        "pix2text": "快速转换",
+        "marker": "高质量转换"
+    }.get(converter.value, converter.value)
 
     logger.info(f"✅ [API] 上传响应完成: doc_id={doc_id}, status='processing'")
 
@@ -119,7 +158,7 @@ async def upload_document(
         doc_id=doc_id,
         filename=file.filename,
         status="processing",
-        message="文档正在处理中",
+        message=f"文档正在处理中 (使用{converter.value}转换器,{converter_desc})",
         file_size=file_size
     )
 
@@ -246,12 +285,54 @@ async def get_document(doc_id: str) -> Dict[str, Any]:
 async def get_image(doc_id: str, image_name: str) -> FileResponse:
     """
     获取文档中的图像
-    TODO: Phase 2 - 实现图像返回
+
+    Args:
+        doc_id: 文档ID
+        image_name: 图像文件名 (支持带或不带.png扩展名)
+
+    Returns:
+        图像文件 (PNG格式)
+
+    Note:
+        - Markdown中的路径应包含完整扩展名: /api/v1/documents/{doc_id}/images/{image_name}.png
+        - API端点会自动添加.png扩展名以保持向后兼容性
+        - 实际文件路径: data/processed/images/{doc_id}/{image_name}.png
     """
-    img_path = settings.processed_dir / "images" / doc_id / f"{image_name}.png"
+    # 🔍 调试日志: 记录图片请求详情
+    logger.info(f"🖼️ [API] 图片请求: doc_id={doc_id}, image_name={image_name}")
+
+    # ✅ 修复: 智能处理扩展名（避免双重 .png.png）
+    # 如果 image_name 已经包含 .png 扩展名，直接使用；否则添加 .png
+    if image_name.endswith('.png'):
+        img_filename = image_name
+        logger.debug(f"✅ [API] image_name 已包含 .png 扩展名")
+    else:
+        img_filename = f"{image_name}.png"
+        logger.debug(f"✅ [API] 为 image_name 添加 .png 扩展名")
+
+    img_path = settings.processed_dir / "images" / doc_id / img_filename
+
+    logger.debug(f"🔍 [API] 查找图片路径: {img_path}")
+    logger.debug(f"🔍 [API] 文件是否存在: {img_path.exists()}")
 
     if not img_path.exists():
+        # 🚨 错误日志: 记录图片不存在的详细信息
+        logger.error(f"❌ [API] 图片不存在: doc_id={doc_id}, image_name={image_name}")
+        logger.error(f"❌ [API] 期望路径: {img_path.absolute()}")
+
+        # 尝试列出该目录下所有图片文件(用于调试)
+        img_dir = settings.processed_dir / "images" / doc_id
+        if img_dir.exists():
+            existing_files = [f.name for f in img_dir.glob("*.png")]
+            logger.debug(f"🔍 [API] 该目录下现有的图片文件: {existing_files}")
+        else:
+            logger.error(f"❌ [API] 图片目录不存在: {img_dir.absolute()}")
+
         raise HTTPException(status_code=404, detail="图像不存在")
+
+    # ✅ 成功日志: 记录图片返回信息
+    file_size = img_path.stat().st_size
+    logger.info(f"✅ [API] 返回图片: path={img_path.name}, size={file_size} bytes")
 
     return FileResponse(img_path, media_type="image/png")
 

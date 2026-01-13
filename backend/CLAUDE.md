@@ -110,7 +110,7 @@ python-docx==1.1.0        # DOCX 处理 (Phase 3)
 dashscope>=1.14.0         # Qwen API SDK (Phase 3)
 tiktoken>=0.5.0           # Token 计数 (Phase 3)
 pydantic>=2.9.2,<3.0.0    # 数据验证
-pydantic-settings==2.1.0  # 配置管理
+pydantic-settings>=2.2.1,<3.0.0  # 配置管理
 ```
 
 ### 配置管理 (`app/config.py`)

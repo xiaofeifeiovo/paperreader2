@@ -20,7 +20,8 @@ async def process_document_background(
     doc_id: str,
     file_path: str,
     file_type: str,
-    output_base_dir: str
+    output_base_dir: str,
+    converter: str = "pix2text"
 ) -> None:
     """
     后台异步处理文档
@@ -30,6 +31,7 @@ async def process_document_background(
         file_path: 原始文件路径
         file_type: 文件类型（pdf/docx）
         output_base_dir: 输出基础目录
+        converter: PDF转换器名称 (pix2text/marker)
 
     返回:
         None（结果保存到文件系统）
@@ -58,7 +60,12 @@ async def process_document_background(
     md_dir.mkdir(parents=True, exist_ok=True)
 
     start_time = time.time()
-    logger.info(f"🚀 [BG] 开始后台处理: doc_id={doc_id}, file_type={file_type}")
+    logger.info(
+        f"🚀 [BG] 开始后台处理: "
+        f"doc_id={doc_id}, "
+        f"file_type={file_type}, "
+        f"converter={converter}"
+    )
 
     # 系统资源监控
     try:
@@ -75,16 +82,20 @@ async def process_document_background(
 
     try:
         # 步骤1：选择处理器
-        logger.info(f"📄 [BG] 步骤1: 选择处理器 (file_type={file_type})")
+        logger.info(
+            f"📄 [BG] 步骤1: 选择处理器 "
+            f"(file_type={file_type}, converter={converter})"
+        )
         if file_type.lower() == "pdf":
-            processor = PDFProcessor()
+            processor = PDFProcessor(converter=converter)
         else:
             raise ValueError(f"不支持的文件类型: {file_type}")
 
         # 处理器信息
         logger.debug(
             f"🔧 [BG] 处理器实例: {processor.__class__.__name__}, "
-            f"device={getattr(processor, 'device', 'N/A')}"
+            f"converter={converter}, "
+            f"device={processor.device}"
         )
 
         # 步骤2：处理文档
@@ -133,6 +144,24 @@ async def process_document_background(
             f"images={len(image_filenames)}, "
             f"time={processing_time:.2f}s"
         )
+
+        # ✅ 添加处理完成摘要
+        if image_filenames:
+            logger.info(f"📊 [BG] 处理完成摘要:")
+            logger.info(f"   ├─ 文档ID: {doc_id}")
+            logger.info(f"   ├─ Markdown大小: {len(markdown_content)} 字符")
+            logger.info(f"   ├─ 图片数量: {len(image_filenames)}")
+            logger.info(f"   ├─ 图片目录: {output_base_dir / 'images' / doc_id}")
+            logger.info(f"   └─ 处理时间: {processing_time:.2f}秒")
+
+            # 列出所有图片文件
+            image_dir = Path(output_base_dir) / "images" / doc_id
+            if image_dir.exists():
+                actual_images = list(image_dir.glob("img_*.png"))
+                logger.info(f"🖼️ [BG] 实际图片文件验证: {len(actual_images)} 个文件")
+                for img_path in sorted(actual_images):
+                    file_size = img_path.stat().st_size
+                    logger.info(f"   ├─ {img_path.name}: {file_size} 字节")
 
     except Exception as e:
         # ✅ 改进：更详细的错误信息

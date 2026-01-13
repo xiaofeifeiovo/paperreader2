@@ -3,6 +3,7 @@
  */
 import { apiClient } from './client';
 import type {
+  ConverterType,
   DocumentContent,
   DocumentListResponse,
   UploadResponse,
@@ -16,12 +17,30 @@ class DocumentService {
 
   /**
    * 上传文档
+   * ✅ 修改：添加converter参数
+   *
    * @param file 文件对象
+   * @param converter PDF转换器类型 (默认: pix2text)
    * @returns 上传响应
    */
-  async uploadDocument(file: File): Promise<UploadResponse> {
+  async uploadDocument(
+    file: File,
+    converter: ConverterType = 'pix2text'
+  ): Promise<UploadResponse> {
+    // 🔍 调试日志：接收参数
+    console.log('🔍 [documentService] ===== uploadDocument 被调用 =====');
+    console.log('🔍 [documentService] 接收到的 converter:', converter);
+    console.log('🔍 [documentService] converter 类型:', typeof converter);
+
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('converter', converter);  // ✅ 添加converter字段
+
+    // 🔍 调试日志：验证 FormData 内容
+    console.log('🔍 [documentService] FormData entries:');
+    for (let [key, value] of Array.from(formData.entries())) {
+      console.log(`  - ${key}:`, value);
+    }
 
     const response = await apiClient.post<UploadResponse>(
       `${this.basePath}/upload`,
@@ -33,6 +52,7 @@ class DocumentService {
       }
     );
 
+    console.log('✅ [documentService] API 响应:', response.data);
     return response.data;
   }
 
@@ -68,7 +88,21 @@ class DocumentService {
    * @returns 图像 URL
    */
   getImageUrl(docId: string, imageName: string): string {
-    return `${apiClient.defaults.baseURL}${this.basePath}/${docId}/images/${imageName}`;
+    // ✅ 确保 imageName 包含 .png 扩展名
+    const imageNameWithExt = imageName.endsWith('.png')
+      ? imageName
+      : `${imageName}.png`;
+
+    const url = `${apiClient.defaults.baseURL}${this.basePath}/${docId}/images/${imageNameWithExt}`;
+
+    // 🔍 调试日志: 记录图片URL构建过程
+    console.log('🔍 [DocumentService] 构建图片URL:');
+    console.log('  原始 imageName:', imageName);
+    console.log('  修正后 imageName:', imageNameWithExt);
+    console.log('  baseURL:', apiClient.defaults.baseURL);
+    console.log('  最终 URL:', url);
+
+    return url;
   }
 
   /**

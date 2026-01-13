@@ -1,10 +1,12 @@
 /**
  * 文件上传组件
+ * ✅ 新增：PDF转换器下拉选择器
  */
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, X } from 'lucide-react';
+import { Upload, FileText, X, Info } from 'lucide-react';
 import { useDocumentStore } from '../store';
 import { useUIStore } from '../store';
+import { CONVERTER_OPTIONS, type ConverterType } from '../types/document';
 
 /**
  * 文件上传组件
@@ -14,6 +16,7 @@ const FileUpload: React.FC = () => {
   const { showNotification } = useUIStore();
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedConverter, setSelectedConverter] = useState<ConverterType>('pix2text');  // ✅ 新增状态
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 支持的文件类型
@@ -91,18 +94,34 @@ const FileUpload: React.FC = () => {
 
   /**
    * 上传文件
+   * ✅ 修改：传递converter参数
    */
   const handleUpload = async () => {
     if (!selectedFile) return;
 
+    // 🔍 调试日志：上传前转换器选择
+    console.log('🔍 [FileUpload] ===== 开始上传 =====');
+    console.log('🔍 [FileUpload] 上传前转换器选择:', selectedConverter);
+    console.log('🔍 [FileUpload] 文件信息:', selectedFile.name, selectedFile.size);
+
     try {
-      await uploadDocument(selectedFile);
-      showNotification(`成功上传: ${selectedFile.name}`, 'success');
+      await uploadDocument(selectedFile, selectedConverter);  // ✅ 传递选中的转换器
+
+      console.log('✅ [FileUpload] 上传成功');
+
+      const converterLabel = CONVERTER_OPTIONS[selectedConverter].label;
+      showNotification(
+        `成功上传: ${selectedFile.name} (使用${converterLabel})`,
+        'success'
+      );
+
       setSelectedFile(null);
+      setSelectedConverter('pix2text');  // ✅ 重置为默认值
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     } catch (error) {
+      console.error('❌ [FileUpload] 上传失败:', error);
       showNotification(
         error instanceof Error ? error.message : '上传失败',
         'error'
@@ -112,9 +131,11 @@ const FileUpload: React.FC = () => {
 
   /**
    * 取消选择
+   * ✅ 修改：重置转换器选择
    */
   const handleCancel = () => {
     setSelectedFile(null);
+    setSelectedConverter('pix2text');  // ✅ 重置为默认值
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -122,6 +143,37 @@ const FileUpload: React.FC = () => {
 
   return (
     <div className="w-full">
+      {/* ✅ 新增：转换器选择下拉菜单 */}
+      <div className="mb-4">
+        <label
+          htmlFor="converter-select"
+          className="block text-sm font-medium text-gray-700 mb-2"
+        >
+          选择PDF转换器
+        </label>
+        <select
+          id="converter-select"
+          value={selectedConverter}
+          onChange={(e) => setSelectedConverter(e.target.value as ConverterType)}
+          disabled={isLoading}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg
+                     focus:outline-none focus:ring-2 focus:ring-primary-500
+                     disabled:bg-gray-100 disabled:cursor-not-allowed"
+        >
+          <option value="pix2text">{CONVERTER_OPTIONS.pix2text.label}</option>
+          <option value="marker">{CONVERTER_OPTIONS.marker.label}</option>
+        </select>
+
+        {/* 转换器说明文字 */}
+        <div className="mt-2 flex items-start space-x-2 text-xs text-gray-600">
+          <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <p>
+            {CONVERTER_OPTIONS[selectedConverter].description}
+            {' '}(特性: {CONVERTER_OPTIONS[selectedConverter].features.join('、')})
+          </p>
+        </div>
+      </div>
+
       {/* 文件上传区域 */}
       <div
         className={`upload-zone ${isDragging ? 'dragging' : ''}`}

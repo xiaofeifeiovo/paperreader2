@@ -17,6 +17,38 @@ export const DocumentStatus = {
 export type DocumentStatus = (typeof DocumentStatus)[keyof typeof DocumentStatus];
 
 /**
+ * ✅ 新增：PDF转换器类型
+ * 对应后端: app/models/document.py
+ */
+export const ConverterType = {
+  PIX2TEXT: 'pix2text',
+  MARKER: 'marker',
+} as const;
+
+export type ConverterType = (typeof ConverterType)[keyof typeof ConverterType];
+
+/**
+ * ✅ 新增：转换器选项配置
+ */
+export const CONVERTER_OPTIONS: Record<
+  ConverterType,
+  { label: string; description: string; features: string[]; speed: 'fast' | 'slow' }
+> = {
+  pix2text: {
+    label: 'Pix2Text (快速,推荐)',
+    description: '处理速度快,适合大多数文档',
+    features: ['处理速度快', '公式识别准确', '适合学术论文'],
+    speed: 'fast',
+  },
+  marker: {
+    label: 'Marker (高质量)',
+    description: '质量更高,适合复杂布局和表格较多的文档',
+    features: ['布局识别精准', '表格还原效果好', '适合复杂文档'],
+    speed: 'slow',
+  },
+};
+
+/**
  * 文档信息（来自列表API）
  * 对应后端: GET /api/v1/documents/list
  */

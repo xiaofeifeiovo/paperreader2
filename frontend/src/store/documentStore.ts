@@ -2,7 +2,7 @@
  * 文档 Store - Zustand 状态管理
  */
 import { create } from 'zustand';
-import type { Document, DocumentContent } from '../types';
+import type { ConverterType, Document, DocumentContent } from '../types';
 import { documentService } from '../services';
 
 /**
@@ -19,7 +19,7 @@ interface DocumentState {
   // 操作方法
   fetchDocuments: () => Promise<void>;
   fetchDocumentContent: (docId: string) => Promise<DocumentContent>;  // ✅ 新增
-  uploadDocument: (file: File) => Promise<string>;
+  uploadDocument: (file: File, converter?: ConverterType) => Promise<string>;  // ✅ 修改：添加converter参数
   deleteDocument: (docId: string) => Promise<void>;
   setCurrentDocument: (document: Document | null) => void;
   clearError: () => void;
@@ -67,10 +67,18 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   },
 
   // 上传文档
-  uploadDocument: async (file: File) => {
+  // ✅ 修改：添加converter参数
+  uploadDocument: async (file: File, converter: ConverterType = 'pix2text') => {
+    // 🔍 调试日志：接收参数
+    console.log('🔍 [documentStore] ===== uploadDocument 被调用 =====');
+    console.log('🔍 [documentStore] 接收到的 converter:', converter);
+    console.log('🔍 [documentStore] 文件信息:', file.name, file.size);
+
     set({ isLoading: true, error: null });
     try {
-      const response = await documentService.uploadDocument(file);
+      const response = await documentService.uploadDocument(file, converter);  // ✅ 传递converter
+
+      console.log('✅ [documentStore] API 响应成功:', response);
 
       // ✅ 修复：创建临时文档对象（匹配后端格式）
       const newDoc: Document = {
@@ -89,6 +97,7 @@ export const useDocumentStore = create<DocumentState>((set) => ({
 
       return response.doc_id;
     } catch (error) {
+      console.error('❌ [documentStore] 上传失败:', error);
       set({
         error: error instanceof Error ? error.message : '上传文档失败',
         isLoading: false,
